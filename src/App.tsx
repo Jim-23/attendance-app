@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import Login from './components/Login'
+import Dashboard from './components/Dashboard'
 
 function App() {
   const [session, setSession] = useState<Awaited<
@@ -26,19 +27,20 @@ function App() {
     }
   }, [])
 
+  async function handleLogout() {
+    await supabase.auth.signOut()
+  }
+
   if (!session) {
     return <Login />
   }
 
   return (
-    <div>
-      <h1>Attendance Dashboard</h1>
-      <p>Logged in as: {session.user.email}</p>
-
-      <button onClick={() => supabase.auth.signOut()}>
-        Log out
-      </button>
-    </div>
+    <Dashboard
+      userId={session.user.id}
+      email={session.user.email ?? ''}
+      onLogout={handleLogout}
+    />
   )
 }
 
