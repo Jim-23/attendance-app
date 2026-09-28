@@ -90,6 +90,8 @@ export function roundDeparture(date: Date): Date {
  * Spočítá čistý odpracovaný čas.
  * Oběd má vždy 30 minut.
  */
+
+
 export function calculateWorkedMinutes(
   arrival: Date,
   departure: Date,
@@ -105,7 +107,30 @@ export function calculateWorkedMinutes(
 
   const lunchMinutes = hasLunch ? 30 : 0
 
-  return totalMinutes - lunchMinutes
+  return Math.max(0, totalMinutes - lunchMinutes)
+}
+
+
+// NOVÉ
+export function calculateCurrentWorkedMinutes(
+  arrival: Date,
+  now: Date,
+  hasLunch: boolean,
+): number {
+  const roundedArrival = roundArrival(arrival)
+  const roundedNow = roundDeparture(now)
+
+  const totalMinutes =
+    (roundedNow.getTime() -
+      roundedArrival.getTime()) /
+    (1000 * 60)
+
+  const lunchMinutes = hasLunch ? 30 : 0
+
+  return Math.max(
+    0,
+    totalMinutes - lunchMinutes,
+  )
 }
 
 /**
@@ -176,7 +201,12 @@ export function calculateDailyBalances(
 ): DailyBalance[] {
   const balances: DailyBalance[] = []
 
-  // Nejprve zpracujeme všechny dny, ve kterých existuje práce.
+  /*
+   * Sesbíráme všechny datumy, které mají buď pracovní session,
+   * nebo nějaký záznam volna.
+   */
+  const dates = new Set<string>()
+
   for (const session of sessions) {
     const date = formatInTimeZone(
       new Date(session.started_at),
@@ -184,87 +214,73 @@ export function calculateDailyBalances(
       'yyyy-MM-dd',
     )
 
-    const workedMinutes = calculateWorkedMinutes(
-      new Date(session.started_at),
-      new Date(session.ended_at),
-      session.lunch_started_at !== null,
-    )
+    dates.add(date)
+  }
+
+  for (const workDay of workDays) {
+    dates.add(workDay.date)
+  }
+
+  /*
+   * Každý den zpracujeme pouze jednou.
+   */
+  for (const date of dates) {
+    const daySessions = sessions.filter((session) => {
+      const sessionDate = formatInTimeZone(
+        new Date(session.started_at),
+        APP_TIMEZONE,
+        'yyyy-MM-dd',
+      )
+
+      return sessionDate === date
+    })
 
     const dayWorkDays = workDays.filter(
       (day) => day.date === date,
     )
 
-    const creditedMinutes = dayWorkDays
-      .filter((day) => day.type !== 'comp_time')
-      .reduce(
-        (total, day) =>
-          total + day.duration_minutes,
-        0,
-      )
-
-    const compTimeMinutes = dayWorkDays
-      .filter((day) => day.type === 'comp_time')
-      .reduce(
-        (total, day) =>
-          total + day.duration_minutes,
-        0,
-      )
-
-    const balanceMinutes = calculateDailyBalance(
-      workedMinutes,
-      creditedMinutes,
-      compTimeMinutes,
-      requiredMinutes,
-    )
-    const overtimeChangeMinutes = calculateOvertimeChange(
-        workedMinutes,
-        creditedMinutes,
-        compTimeMinutes,
-        requiredMinutes,
-    )
-
-    balances.push({
-      date,
-      workedMinutes,
-      creditedMinutes,
-      compTimeMinutes,
-      balanceMinutes,
-      overtimeChangeMinutes,
-    })
-  }
-
-  // Potom přidáme work_days, které nemají žádnou pracovní session.
-  for (const workDay of workDays) {
-    const alreadyExists = balances.some(
-      (balance) => balance.date === workDay.date,
-    )
-
-    if (alreadyExists) {
-      continue
-    }
-
-    const dayWorkDays = workDays.filter(
-      (day) => day.date === workDay.date,
-    )
-
-    const creditedMinutes = dayWorkDays
-      .filter((day) => day.type !== 'comp_time')
-      .reduce(
-        (total, day) =>
-          total + day.duration_minutes,
-        0,
-      )
-
-    const compTimeMinutes = dayWorkDays
-      .filter((day) => day.type === 'comp_time')
-      .reduce(
-        (total, day) =>
-          total + day.duration_minutes,
-        0,
-      )
-
-    const balanceMinutes = calculateDailyBalance(
+    /*
+     * Pokud je v jednom dni více pracovních sessions,
+     * jejich odpracovaný čas se sečte.
+     */
+    const workedMinutes = daySessions.reduce(
+      (total, session) => {
+        return (
+          total +
+          calculateWorkedMinutes(
+            new Date(session.started_at),
+            new Date(session.ended_at),
+            session.lunch_started_at !== null,
+          )
+        )
+      },
       0,
+    )
+
+    /*
+     * Dovolená, sick day a další uznané volno.
+     */
+    const creditedMinutes = dayWorkDays
+      .filter((day) => day.type !== 'comp_time')
+      .reduce(
+        (total, day) =>
+          total + day.duration_minutes,
+        0,
+      )
+
+    /*
+     * Náhradní volno.
+     */
+    const compTimeMinutes = dayWorkDays
+      .filter((day) => day.type === 'comp_time')
+      .reduce(
+        (total, day) =>
+          total + day.duration_minutes,
+        0,
+      )
+
+    const balanceMinutes = calculateDailyBalance(
+      workedMinutes,
       creditedMinutes,
       compTimeMinutes,
       requiredMinutes,
@@ -272,15 +288,15 @@ export function calculateDailyBalances(
 
     const overtimeChangeMinutes =
       calculateOvertimeChange(
-        0,
+        workedMinutes,
         creditedMinutes,
         compTimeMinutes,
         requiredMinutes,
-    )
+      )
 
     balances.push({
-      date: workDay.date,
-      workedMinutes: 0,
+      date,
+      workedMinutes,
       creditedMinutes,
       compTimeMinutes,
       balanceMinutes,

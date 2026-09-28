@@ -12,6 +12,7 @@ import {
 import {
     calculateWorkedMinutes,
     calculateDailyBalances,
+    calculateCurrentWorkedMinutes,
     calculateRunningOvertime,
     formatDuration,
     roundArrival,
@@ -511,7 +512,7 @@ async function handleDeleteDayRecord(id: number) {
     setActionLoading(true)
     setMessage(null)
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('work_sessions')
       .update({
         ended_at: new Date().toISOString(),
@@ -525,7 +526,7 @@ async function handleDeleteDayRecord(id: number) {
       console.error('Failed to record departure:', error)
       setMessage('Nepodařilo se zaznamenat odchod.')
     } else {
-        setWorkSession(data)
+        setWorkSession(null)
         setMessage('Odchod zaznamenán.')
         await loadHistory()
     }
@@ -542,11 +543,65 @@ const todayWorkDays = workDays.filter(
     (day) => day.date === todayDate,
 )
 
-const todayCoveredMinutes = Math.min(
-    todayWorkDays.reduce(
-        (total, day) => total + day.duration_minutes,
+const todayHadLunch = history.some(
+  (session) =>
+    session.lunch_started_at
+)
+
+const todayCreditedMinutes = todayWorkDays
+    .filter((day) => day.type !== 'comp_time')
+    .reduce(
+        (total, day) =>
+            total + day.duration_minutes,
         0,
-    ),
+    )
+
+const todayCompTimeMinutes = todayWorkDays
+    .filter((day) => day.type === 'comp_time')
+    .reduce(
+        (total, day) =>
+            total + day.duration_minutes,
+        0,
+    )
+
+const todayCompletedSessions = history.filter(
+    (session) =>
+        formatInTimeZone(
+            new Date(session.started_at),
+            APP_TIMEZONE,
+            'yyyy-MM-dd',
+        ) === todayDate,
+)
+
+const todayCompletedWorkedMinutes =
+    todayCompletedSessions.reduce(
+        (total, session) =>
+            total +
+            calculateWorkedMinutes(
+                new Date(session.started_at),
+                new Date(session.ended_at),
+                session.lunch_started_at !== null,
+            ),
+        0,
+    )
+
+const todayCurrentWorkedMinutes =
+    workSession && !workSession.ended_at
+        ? calculateCurrentWorkedMinutes(
+              new Date(workSession.started_at),
+              new Date(),
+              workSession.lunch_started_at !== null,
+          )
+        : 0
+
+const todayWorkedMinutes =
+    todayCompletedWorkedMinutes +
+    todayCurrentWorkedMinutes
+
+const todayCoveredMinutes = Math.min(
+    todayWorkedMinutes +
+        todayCreditedMinutes +
+        todayCompTimeMinutes,
     480,
 )
 
@@ -555,7 +610,8 @@ const todayRemainingMinutes = Math.max(
     480 - todayCoveredMinutes,
 )
 
-const todayFullyCovered = todayRemainingMinutes === 0
+const todayFullyCovered =
+    todayRemainingMinutes === 0
 
 const todaySessionDate =
     workSession?.ended_at
@@ -654,6 +710,12 @@ return (
         </header>
 
         <main className="dashboard-content">
+          {/* ==================== MESSAGE ==================== */}
+            {message && (
+                <div className="message">
+                    {message}
+                </div>
+            )}
 
             {/* ==================== TODAY ==================== */}
 
@@ -774,7 +836,7 @@ return (
 
                             {!workSession.ended_at && (
                                 <div className="action-row">
-                                    {!workSession.lunch_started_at && (
+                                    {workSession && !todayHadLunch && (
                                         <button
                                             className="button button-secondary"
                                             onClick={handleLunch}
@@ -846,7 +908,7 @@ return (
             <section className="dashboard-section">
                 <div className="section-heading">
                     <div>
-                        <p className="section-eyebrow">PŘEHLED</p>
+                        <p className="section-eyebrow">TENTO MĚSÍC</p>
                         <h2>Statistiky</h2>
                     </div>
                 </div>
@@ -882,75 +944,14 @@ return (
                 </div>
             </section>
 
-            {/* ==================== YEAR ==================== */}
-
-            <section className="dashboard-section">
-                <div className="section-heading">
-                    <div>
-                        <p className="section-eyebrow">TENTO ROK</p>
-                        <h2>Volno</h2>
-                    </div>
-                </div>
-
-                <div className="stats-grid">
-                    <div className="stat-card">
-                        <span className="stat-label">
-                            Dovolená
-                        </span>
-
-                        <strong className="stat-value">
-                            {formatDuration(
-                                vacationUsedMinutes,
-                                false,
-                            )}
-                        </strong>
-
-                        <span className="stat-description">
-                            zbývá{' '}
-                            {formatDuration(
-                                vacationRemainingMinutes,
-                                false,
-                            )}
-                        </span>
-                    </div>
-
-                    <div className="stat-card">
-                        <span className="stat-label">
-                            Sick days
-                        </span>
-
-                        <strong className="stat-value">
-                            {formatDuration(
-                                sickDayUsedMinutes,
-                                false,
-                            )}
-                        </strong>
-
-                        <span className="stat-description">
-                            zbývá{' '}
-                            {formatDuration(
-                                sickDayRemainingMinutes,
-                                false,
-                            )}
-                        </span>
-                    </div>
-                </div>
-            </section>
-
-            {/* ==================== MESSAGE ==================== */}
-
-            {message && (
-                <div className="message">
-                    {message}
-                </div>
-            )}
+            
 
             {/* ==================== HISTORY ==================== */}
 
             <section className="dashboard-section">
                 <div className="section-heading">
                     <div>
-                        <p className="section-eyebrow">PŘEHLED DNŮ</p>
+                        <p className="section-eyebrow">PŘEHLED ZÁZNAMŮ</p>
                         <h2>Historie</h2>
                     </div>
                 </div>
@@ -1083,14 +1084,67 @@ return (
 
             {/* ==================== TIME OFF ==================== */}
 
+                
+
+            {/* ==================== SAVED TIME OFF ==================== */}
             <section className="dashboard-section">
                 <div className="section-heading">
                     <div>
-                        <p className="section-eyebrow">EVIDENCE</p>
-                        <h2>Přidat volno</h2>
+                        <p className="section-eyebrow">
+                            PŘEHLED
+                        </p>
+                        <h2>Volno</h2>
                     </div>
                 </div>
+                <p className="section-label">
+                  Volno tento rok
+                </p>
+                <div className="stats-grid">
+                        <div className="stat-card">
+                            <span className="stat-label">
+                                Dovolená
+                            </span>
 
+                            <strong className="stat-value">
+                                {formatDuration(
+                                    vacationUsedMinutes,
+                                    false,
+                                )}
+                            </strong>
+
+                            <span className="stat-description">
+                                zbývá{' '}
+                                {formatDuration(
+                                    vacationRemainingMinutes,
+                                    false,
+                                )}
+                            </span>
+                        </div>
+
+                        <div className="stat-card">
+                            <span className="stat-label">
+                                Sick days
+                            </span>
+
+                            <strong className="stat-value">
+                                {formatDuration(
+                                    sickDayUsedMinutes,
+                                    false,
+                                )}
+                            </strong>
+
+                            <span className="stat-description">
+                                zbývá{' '}
+                                {formatDuration(
+                                    sickDayRemainingMinutes,
+                                    false,
+                                )}
+                            </span>
+                        </div>
+                </div>
+                <p className="section-label">
+                  Přidat volno
+                </p>
                 <div className="form-card">
                     <div className="form-grid">
                         <div className="form-field">
@@ -1296,20 +1350,10 @@ return (
                             : 'Přidat volno'}
                     </button>
                 </div>
-            </section>
-
-            {/* ==================== SAVED TIME OFF ==================== */}
-
-            <section className="dashboard-section">
-                <div className="section-heading">
-                    <div>
-                        <p className="section-eyebrow">
-                            EVIDENCE
-                        </p>
-                        <h2>Moje volno</h2>
-                    </div>
-                </div>
-
+                
+                <p className="section-label">
+                  Přehled volna
+                </p>
                 {workDays.length === 0 ? (
                     <div className="empty-state card">
                         <p>Žádné záznamy.</p>
