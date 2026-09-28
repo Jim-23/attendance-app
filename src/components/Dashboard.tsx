@@ -498,7 +498,14 @@ async function handleDeleteDayRecord(id: number) {
       setMessage('Nepodařilo se zaznamenat oběd.')
     } else {
       setWorkSession(data)
-      setMessage('Oběd zaznamenán na 30 minut.')
+      setHistory((prev) =>
+        prev.map((session) =>
+            session.id === data.id
+                ? data
+                : session
+        )
+    )
+    setMessage('Oběd zaznamenán na 30 minut.')
     }
 
     setActionLoading(false)
@@ -944,8 +951,7 @@ return (
                 </div>
             </section>
 
-            
-
+  
             {/* ==================== HISTORY ==================== */}
 
             <section className="dashboard-section">
