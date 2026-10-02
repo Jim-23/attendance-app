@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatInTimeZone } from 'date-fns-tz'
 
@@ -52,6 +52,8 @@ interface DashboardProps {
     onLogout: () => void
 }
 
+const PAGE_SIZE = 1000
+
 function Dashboard({ userId, email, onLogout }: DashboardProps) {
     const [workSession, setWorkSession] = useState<WorkSession | null>(null)
     const [loading, setLoading] = useState(true)
@@ -74,145 +76,186 @@ function Dashboard({ userId, email, onLogout }: DashboardProps) {
     const [compMinutes, setCompMinutes] = useState(15)
 
 
-  useEffect(() => {
-    loadTodaySession()
-    loadHistory()
-    loadWorkDays()
-}, [userId])
+    const loadWorkDays = useCallback(async () => {
+        const allWorkDays: WorkDay[] = []
+        let offset = 0
 
-async function loadWorkDays() {
-    setWorkDaysLoading(true)
+        while (true) {
+            const { data, error } = await supabase
+                .from('work_days')
+                .select('id, date, type, duration_minutes, note')
+                .eq('user_id', userId)
+                .order('date', { ascending: false })
+                .order('id', { ascending: false })
+                .range(offset, offset + PAGE_SIZE - 1)
 
-    const { data, error } = await supabase
-        .from('work_days')
-        .select('id, date, type, duration_minutes, note')
-        .eq('user_id', userId)
-        .order('date', { ascending: false })
+            if (error) {
+                console.error('Failed to load work days:', error)
+                setMessage('Nepodařilo se načíst volno.')
+                setWorkDaysLoading(false)
+                return
+            }
 
-    if (error) {
-        console.error('Failed to load work days:', error)
-        setMessage('Nepodařilo se načíst volno.')
+            const page = data ?? []
+            allWorkDays.push(...page)
+
+            if (page.length < PAGE_SIZE) {
+                break
+            }
+
+            offset += PAGE_SIZE
+        }
+
+        setWorkDays(allWorkDays)
         setWorkDaysLoading(false)
-        return
-    }
+    }, [userId])
 
-    setWorkDays(data ?? [])
-    setWorkDaysLoading(false)
-}
+    const loadTodaySession = useCallback(async () => {
+        const { data, error } = await supabase
+            .from('work_sessions')
+            .select('id, started_at, ended_at, lunch_started_at')
+            .eq('user_id', userId)
+            .gte('started_at', getStartOfTodayUtc())
+            .is('ended_at', null)
+            .order('started_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
 
-  async function loadTodaySession() {
-    setLoading(true)
+        if (error) {
+            console.error('Failed to load today session:', error)
+            setMessage('Nepodařilo se načíst dnešní docházku.')
+        } else {
+            setWorkSession(data)
+        }
 
-    const { data, error } = await supabase
-        .from('work_sessions')
-        .select('id, started_at, ended_at, lunch_started_at')
-        .eq('user_id', userId)
-        .gte('started_at', getStartOfTodayUtc())
-        .is('ended_at', null)
-        .order('started_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+        setLoading(false)
+    }, [userId])
 
-    if (error) {
-      console.error('Failed to load today session:', error)
-      setMessage('Nepodařilo se načíst dnešní docházku.')
-    } else {
-      setWorkSession(data)
-    }
+    const loadHistory = useCallback(async () => {
+        const allSessions: HistorySession[] = []
+        let offset = 0
 
-    setLoading(false)
-  }
+        while (true) {
+            const { data, error } = await supabase
+                .from('work_sessions')
+                .select('id, started_at, ended_at, lunch_started_at')
+                .eq('user_id', userId)
+                .not('ended_at', 'is', null)
+                .order('started_at', { ascending: false })
+                .order('id', { ascending: false })
+                .range(offset, offset + PAGE_SIZE - 1)
 
-  async function loadHistory() {
-      const { data, error } = await supabase
-          .from('work_sessions')
-          .select('id, started_at, ended_at, lunch_started_at')
-          .eq('user_id', userId)
-          .not('ended_at', 'is', null)
-          .order('started_at', { ascending: false })
+            if (error) {
+                console.error('Failed to load history:', error)
+                setMessage('Nepodařilo se načíst historii docházky.')
+                return
+            }
 
-      if (error) {
-          console.error('Failed to load history:', error)
-          setMessage('Nepodařilo se načíst historii docházky.')
-          return
-      }
+            const page = data ?? []
+            allSessions.push(...page)
 
-      setHistory(data ?? [])
+            if (page.length < PAGE_SIZE) {
+                break
+            }
 
-      const sessions = data ?? []
+            offset += PAGE_SIZE
+        }
 
-      const { data: monthWorkDays, error: workDaysError } =
-          await supabase
-              .from('work_days')
-              .select('date, type, duration_minutes')
-              .eq('user_id', userId)
+        setHistory(allSessions)
 
-      if (workDaysError) {
-          console.error(
-              'Failed to load work days for balance:',
-              workDaysError,
-          )
+        const today = formatInTimeZone(
+            new Date(),
+            APP_TIMEZONE,
+            'yyyy-MM-dd',
+        )
 
-          setMessage(
-              'Nepodařilo se načíst volno pro výpočet bilance.',
-          )
+        const allWorkDaysToDate: Pick<
+            WorkDay,
+            'date' | 'type' | 'duration_minutes'
+        >[] = []
+        offset = 0
 
-          return
-      }
+        while (true) {
+            const { data, error } = await supabase
+                .from('work_days')
+                .select('date, type, duration_minutes')
+                .eq('user_id', userId)
+                .lte('date', today)
+                .order('date', { ascending: false })
+                .order('id', { ascending: false })
+                .range(offset, offset + PAGE_SIZE - 1)
 
-      const today = formatInTimeZone(
-          new Date(),
-          APP_TIMEZONE,
-          'yyyy-MM-dd',
-      )
+            if (error) {
+                console.error(
+                    'Failed to load work days for balance:',
+                    error,
+                )
+                setMessage(
+                    'Nepodařilo se načíst volno pro výpočet bilance.',
+                )
+                return
+            }
 
-      const monthStart = new Date(
-          getStartOfCurrentMonthUtc(),
-      )
+            const page = data ?? []
+            allWorkDaysToDate.push(...page)
 
-      const currentMonthSessions = sessions.filter(
-          (session) =>
-              new Date(session.started_at) >= monthStart,
-      )
+            if (page.length < PAGE_SIZE) {
+                break
+            }
 
-      const totalWorkedMinutes =
-          currentMonthSessions.reduce(
-              (total, session) => {
-                  return total + calculateWorkedMinutes(
-                      new Date(session.started_at),
-                      new Date(session.ended_at),
-                      session.lunch_started_at !== null,
-                  )
-              },
-              0,
-          )
+            offset += PAGE_SIZE
+        }
 
-      // Pouze dny, které už skutečně nastaly.
-      // Budoucí dovolená/sick day/comp time nesmí
-      // ovlivnit současný přesčasový účet.
-      const sessionsToDate = sessions.filter(
-          (session) => {
-              const sessionDate = formatInTimeZone(
-                  new Date(session.started_at),
-                  APP_TIMEZONE,
-                  'yyyy-MM-dd',
-              )
+        const monthStart = new Date(
+            getStartOfCurrentMonthUtc(),
+        )
 
-              return sessionDate <= today
-          },
-      )
+        const currentMonthSessions = allSessions.filter(
+            (session) =>
+                new Date(session.started_at) >= monthStart,
+        )
 
-      const workDaysToDate = (monthWorkDays ?? []).filter((day) => day.date <= today)
+        const totalWorkedMinutes =
+            currentMonthSessions.reduce(
+                (total, session) =>
+                    total +
+                    calculateWorkedMinutes(
+                        new Date(session.started_at),
+                        new Date(session.ended_at),
+                        session.lunch_started_at !== null,
+                    ),
+                0,
+            )
 
-      const dailyBalances = calculateDailyBalances(sessionsToDate, workDaysToDate)
-      setDailyBalances(dailyBalances)
+        // Future leave must not affect the overtime balance yet.
+        const sessionsToDate = allSessions.filter((session) => {
+            const sessionDate = formatInTimeZone(
+                new Date(session.started_at),
+                APP_TIMEZONE,
+                'yyyy-MM-dd',
+            )
 
-      const runningOvertimeMinutes = calculateRunningOvertime(dailyBalances)
+            return sessionDate <= today
+        })
 
-      setMonthlyWorkedMinutes(totalWorkedMinutes)
-      setMonthlyOvertimeMinutes(runningOvertimeMinutes)
+        const dailyBalances = calculateDailyBalances(
+            sessionsToDate,
+            allWorkDaysToDate,
+        )
+        setDailyBalances(dailyBalances)
+        setMonthlyWorkedMinutes(totalWorkedMinutes)
+        setMonthlyOvertimeMinutes(
+            calculateRunningOvertime(dailyBalances),
+        )
+    }, [userId])
 
-  }
+    useEffect(() => {
+        void Promise.resolve().then(() => {
+            loadTodaySession()
+            loadHistory()
+            loadWorkDays()
+        })
+    }, [loadHistory, loadTodaySession, loadWorkDays])
 
 async function handleAddDayRecord() {
     if (!dayDateFrom) {
@@ -245,11 +288,11 @@ async function handleAddDayRecord() {
 
     const dates: string[] = []
 
-    const currentDate = new Date(`${dayDateFrom}T00:00:00`)
-    const endDate = new Date(`${dateTo}T00:00:00`)
+    const currentDate = new Date(`${dayDateFrom}T00:00:00Z`)
+    const endDate = new Date(`${dateTo}T00:00:00Z`)
 
     while (currentDate <= endDate) {
-        const dayOfWeek = currentDate.getDay()
+        const dayOfWeek = currentDate.getUTCDay()
 
         // 0 = neděle, 6 = sobota
         if (dayOfWeek !== 0 && dayOfWeek !== 6) {
@@ -258,7 +301,7 @@ async function handleAddDayRecord() {
             )
         }
 
-        currentDate.setDate(currentDate.getDate() + 1)
+        currentDate.setUTCDate(currentDate.getUTCDate() + 1)
     }
 
     if (dates.length === 0) {
@@ -498,14 +541,7 @@ async function handleDeleteDayRecord(id: number) {
       setMessage('Nepodařilo se zaznamenat oběd.')
     } else {
       setWorkSession(data)
-      setHistory((prev) =>
-        prev.map((session) =>
-            session.id === data.id
-                ? data
-                : session
-        )
-    )
-    setMessage('Oběd zaznamenán na 30 minut.')
+      setMessage('Oběd zaznamenán na 30 minut.')
     }
 
     setActionLoading(false)
@@ -548,11 +584,6 @@ const todayDate = formatInTimeZone(
 
 const todayWorkDays = workDays.filter(
     (day) => day.date === todayDate,
-)
-
-const todayHadLunch = history.some(
-  (session) =>
-    session.lunch_started_at
 )
 
 const todayCreditedMinutes = todayWorkDays
@@ -686,17 +717,23 @@ const sickDayRemainingMinutes = Math.max(
     sickDayLimitMinutes - sickDayUsedMinutes,
 )
 
+const latestSessionIdByDate = new Map<string, number>()
+
+for (const session of history) {
+    const sessionDate = formatInTimeZone(
+        new Date(session.started_at),
+        APP_TIMEZONE,
+        'yyyy-MM-dd',
+    )
+
+    if (!latestSessionIdByDate.has(sessionDate)) {
+        latestSessionIdByDate.set(sessionDate, session.id)
+    }
+}
+
 if (loading) {
   return <p>Načítám docházku...</p>
     }
-        console.log('Dashboard state:', {
-        loading,
-        workSession,
-        actionLoading,
-        message,
-        history,
-    })
-
 return (
     <div className="dashboard">
         <header className="dashboard-header">
@@ -843,7 +880,7 @@ return (
 
                             {!workSession.ended_at && (
                                 <div className="action-row">
-                                    {workSession && !todayHadLunch && (
+                                    {!workSession.lunch_started_at && (
                                         <button
                                             className="button button-secondary"
                                             onClick={handleLunch}
@@ -915,7 +952,7 @@ return (
             <section className="dashboard-section">
                 <div className="section-heading">
                     <div>
-                        <p className="section-eyebrow">TENTO MĚSÍC</p>
+                        <p className="section-eyebrow">STATISTIKY</p>
                         <h2>Statistiky</h2>
                     </div>
                 </div>
@@ -933,7 +970,7 @@ return (
 
                     <div className="stat-card">
                         <span className="stat-label">
-                            Přesčasový účet
+                            Přesčasový účet k dnešnímu dni
                         </span>
 
                         <strong
@@ -976,7 +1013,7 @@ return (
                                     <th>Oběd</th>
                                     <th>Odchod</th>
                                     <th>Odpracováno</th>
-                                    <th>Bilance</th>
+                                    <th>Denní bilance</th>
                                 </tr>
                             </thead>
 
@@ -1010,9 +1047,12 @@ return (
                                                 sessionDate,
                                         )
 
+                                    const showDailyBalance =
+                                        latestSessionIdByDate.get(
+                                            sessionDate,
+                                        ) === session.id
                                     const overtimeMinutes =
-                                        dailyBalance?.balanceMinutes ??
-                                        (workedMinutes - 480)
+                                        dailyBalance?.balanceMinutes
 
                                     return (
                                         <tr key={session.id}>
@@ -1067,17 +1107,23 @@ return (
 
                                             <td
                                                 className={
+                                                    overtimeMinutes !==
+                                                        undefined &&
                                                     overtimeMinutes > 0
                                                         ? 'positive'
-                                                        : overtimeMinutes <
-                                                            0
+                                                        : overtimeMinutes !==
+                                                              undefined &&
+                                                          overtimeMinutes < 0
                                                           ? 'negative'
                                                           : ''
                                                 }
                                             >
-                                                {formatDuration(
-                                                    overtimeMinutes,
-                                                )}
+                                                {showDailyBalance &&
+                                                overtimeMinutes !== undefined
+                                                    ? formatDuration(
+                                                          overtimeMinutes,
+                                                      )
+                                                    : '-'}
                                             </td>
                                         </tr>
                                     )
