@@ -5,7 +5,6 @@ import { formatInTimeZone } from 'date-fns-tz'
 import {
     formatTime,
     formatDate,
-    getStartOfTodayUtc,
     getStartOfCurrentMonthUtc,
     APP_TIMEZONE,
     formatDateTimeLocal,
@@ -116,25 +115,26 @@ function Dashboard({ userId, email, onLogout }: DashboardProps) {
         setWorkDaysLoading(false)
     }, [userId])
 
-    const loadTodaySession = useCallback(async () => {
+    const loadOpenSession = useCallback(async () => {
         const { data, error } = await supabase
             .from('work_sessions')
             .select('id, started_at, ended_at, lunch_started_at')
             .eq('user_id', userId)
-            .gte('started_at', getStartOfTodayUtc())
             .is('ended_at', null)
             .order('started_at', { ascending: false })
             .limit(1)
             .maybeSingle()
 
         if (error) {
-            console.error('Failed to load today session:', error)
-            setMessage('Nepodařilo se načíst dnešní docházku.')
-        } else {
-            setWorkSession(data)
+            console.error('Failed to load open session:', error)
+            setMessage('Nepodařilo se načíst otevřenou docházku.')
+            setLoading(false)
+            return null
         }
 
+        setWorkSession(data)
         setLoading(false)
+        return data
     }, [userId])
 
     const loadHistory = useCallback(async () => {
@@ -257,11 +257,11 @@ function Dashboard({ userId, email, onLogout }: DashboardProps) {
 
     useEffect(() => {
         void Promise.resolve().then(() => {
-            loadTodaySession()
+            loadOpenSession()
             loadHistory()
             loadWorkDays()
         })
-    }, [loadHistory, loadTodaySession, loadWorkDays])
+    }, [loadHistory, loadOpenSession, loadWorkDays])
 
 async function handleAddDayRecord() {
     if (!dayDateFrom) {
@@ -511,7 +511,18 @@ async function handleDeleteDayRecord(id: number) {
 
     if (error) {
       console.error('Failed to record arrival:', error)
-      setMessage('Nepodařilo se zaznamenat příchod.')
+      if (error.code === '23505') {
+        const openSession = await loadOpenSession()
+        if (openSession) {
+          setMessage('Načtena otevřená docházka z jiného zařízení.')
+        } else {
+          setMessage(
+            'Příchod již existuje, ale nepodařilo se načíst otevřenou docházku.',
+          )
+        }
+      } else {
+        setMessage('Nepodařilo se zaznamenat příchod.')
+      }
     } else {
       setWorkSession(data)
       setMessage('Příchod zaznamenán.')
