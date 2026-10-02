@@ -1,4 +1,27 @@
-# React + TypeScript + Vite
+# Attendance app
+
+## Dashboard and calendar
+
+The dashboard shows today's date and attendance totals in `Europe/Prague`,
+followed by a read-only monthly calendar. Use the header menu to switch to
+History (including session corrections), Leave, or Statistics.
+
+The calendar displays recorded sessions and leave, plus Czech public holidays
+(including Good Friday and Easter Monday). These holiday markers are
+informational only: they do not create leave records or change attendance
+balances. Navigate between months or use **Dnes** to return to the current month.
+On small screens the calendar scrolls horizontally.
+Holiday dates follow the [Czech National Bank's public holiday list](https://www.cnb.cz/en/public/media-service/schedules-and-other-info/bank-holidays-in-the-czech-republic/),
+with movable Easter dates calculated for the displayed year.
+
+Run calendar date and holiday regression tests with `npm run test:calendar`
+(Node.js 22.18+).
+
+Completed attendance is calculated using the existing 15-minute rounding and
+automatic 30-minute lunch rule. Calendar session times show the recorded times;
+session durations show the calculated worked time.
+
+## Development template
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

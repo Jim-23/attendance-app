@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatInTimeZone } from 'date-fns-tz'
+import AttendanceCalendar from './AttendanceCalendar'
 
 import {
     formatTime,
@@ -55,8 +56,18 @@ interface DashboardProps {
 }
 
 const PAGE_SIZE = 1000
+const dashboardViews = [
+    { id: 'dashboard', label: 'Dnešní přehled' },
+    { id: 'history', label: 'Historie' },
+    { id: 'leave', label: 'Volno' },
+    { id: 'statistics', label: 'Statistiky' },
+] as const
+type DashboardView = typeof dashboardViews[number]['id']
 
 function Dashboard({ userId, email, onLogout }: DashboardProps) {
+    const [view, setView] = useState<DashboardView>('dashboard')
+    const [menuOpen, setMenuOpen] = useState(false)
+    const [now, setNow] = useState(() => new Date())
     const [workSession, setWorkSession] = useState<WorkSession | null>(null)
     const [loading, setLoading] = useState(true)
     const [actionLoading, setActionLoading] = useState(false)
@@ -262,6 +273,11 @@ function Dashboard({ userId, email, onLogout }: DashboardProps) {
             loadWorkDays()
         })
     }, [loadHistory, loadOpenSession, loadWorkDays])
+
+    useEffect(() => {
+        const timer = window.setInterval(() => setNow(new Date()), 30_000)
+        return () => window.clearInterval(timer)
+    }, [])
 
 async function handleAddDayRecord() {
     if (!dayDateFrom) {
@@ -666,7 +682,7 @@ async function handleDeleteDayRecord(id: number) {
   }
 
 const todayDate = formatInTimeZone(
-    new Date(),
+    now,
     APP_TIMEZONE,
     'yyyy-MM-dd',
 )
@@ -713,10 +729,11 @@ const todayCompletedWorkedMinutes =
     )
 
 const todayCurrentWorkedMinutes =
-    workSession && !workSession.ended_at
+    workSession && !workSession.ended_at &&
+    formatInTimeZone(new Date(workSession.started_at), APP_TIMEZONE, 'yyyy-MM-dd') === todayDate
         ? calculateCurrentWorkedMinutes(
               new Date(workSession.started_at),
-              new Date(),
+              now,
               workSession.lunch_started_at !== null,
           )
         : 0
@@ -828,18 +845,53 @@ return (
         <header className="dashboard-header">
             <div>
                 <p className="dashboard-eyebrow">ATTENDANCE</p>
-                <h1>Docházka</h1>
+                <h1>{dashboardViews.find((item) => item.id === view)?.label}</h1>
                 <p className="dashboard-user">
                     Přihlášen jako {email}
                 </p>
             </div>
 
-            <button
-                className="button button-secondary"
-                onClick={onLogout}
-            >
-                Odhlásit
-            </button>
+            <div className="dashboard-header-actions">
+                <div className="dashboard-navigation">
+                    <button
+                        id="navigation-toggle"
+                        className="button button-secondary menu-toggle"
+                        aria-label={menuOpen ? 'Zavřít navigaci' : 'Otevřít navigaci'}
+                        aria-expanded={menuOpen}
+                        aria-controls="dashboard-navigation"
+                        onClick={() => setMenuOpen((open) => !open)}
+                    >
+                        <span className="hamburger-icon" aria-hidden="true">
+                            <span /><span /><span />
+                        </span>
+                        Menu
+                    </button>
+                    {menuOpen && (
+                        <nav id="dashboard-navigation" className="dashboard-menu" aria-label="Hlavní navigace"
+                            onKeyDown={(event) => {
+                                if (event.key === 'Escape') {
+                                    setMenuOpen(false)
+                                    document.getElementById('navigation-toggle')?.focus()
+                                }
+                            }}>
+                            {dashboardViews.map((item) => (
+                                <button key={item.id} className="dashboard-menu-item"
+                                    aria-current={view === item.id ? 'page' : undefined}
+                                    onClick={() => {
+                                        setView(item.id)
+                                        setMenuOpen(false)
+                                        document.getElementById('navigation-toggle')?.focus()
+                                    }}>
+                                    {item.label}
+                                </button>
+                            ))}
+                        </nav>
+                    )}
+                </div>
+                <button className="button button-secondary" onClick={onLogout}>
+                    Odhlásit
+                </button>
+            </div>
         </header>
 
         <main className="dashboard-content">
@@ -852,11 +904,21 @@ return (
 
             {/* ==================== TODAY ==================== */}
 
+            {view === 'dashboard' && (
+            <>
             <section className="dashboard-section">
                 <div className="section-heading">
                     <div>
                         <p className="section-eyebrow">DNES</p>
                         <h2>Pracovní den</h2>
+                        <p className="today-date">
+                            <time dateTime={todayDate}>
+                                {new Intl.DateTimeFormat('cs-CZ', {
+                                    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+                                    timeZone: APP_TIMEZONE,
+                                }).format(now)}
+                            </time>
+                        </p>
                     </div>
                 </div>
 
@@ -883,6 +945,9 @@ return (
                                             workSession.started_at,
                                         )}
                                     </strong>
+                                    <span className="stat-description">
+                                        {formatDate(workSession.started_at)}
+                                    </span>
                                 </div>
 
                                 {workSession.lunch_started_at && (
@@ -1003,9 +1068,7 @@ return (
 
                             <h3>Dnes nemáš pracovní povinnost</h3>
 
-                            <p>
-                                Dnešní pracovní čas je pokryt volnem.
-                            </p>
+                            <p>Dnešní pracovní povinnost je splněna prací nebo volnem.</p>
                         </div>
                     ) : (
                         <div className="arrival-state">
@@ -1034,10 +1097,28 @@ return (
                         </div>
                     )}
                 </div>
+                <div className="stats-grid today-summary">
+                    <div className="stat-card">
+                        <span className="stat-label">Odpracováno dnes</span>
+                        <strong className="stat-value">{formatDuration(todayWorkedMinutes, false)}</strong>
+                    </div>
+                    <div className="stat-card">
+                        <span className="stat-label">Zbývá odpracovat</span>
+                        <strong className="stat-value">{formatDuration(todayRemainingMinutes, false)}</strong>
+                    </div>
+                </div>
             </section>
+            <AttendanceCalendar
+                today={todayDate}
+                sessions={workSession ? [...history, workSession] : history}
+                workDays={workDays}
+            />
+            </>
+            )}
 
             {/* ==================== STATISTICS ==================== */}
 
+            {view === 'statistics' && (
             <section className="dashboard-section">
                 <div className="section-heading">
                     <div>
@@ -1076,10 +1157,12 @@ return (
                     </div>
                 </div>
             </section>
+            )}
 
   
             {/* ==================== HISTORY ==================== */}
 
+            {view === 'history' && (
             <section className="dashboard-section">
                 <div className="section-heading">
                     <div>
@@ -1315,12 +1398,14 @@ return (
                     </div>
                 )}
             </section>
+            )}
 
             {/* ==================== TIME OFF ==================== */}
 
                 
 
             {/* ==================== SAVED TIME OFF ==================== */}
+            {view === 'leave' && (
             <section className="dashboard-section">
                 <div className="section-heading">
                     <div>
@@ -1655,6 +1740,7 @@ return (
                     </div>
                 )}
             </section>
+            )}
         </main>
     </div>
 )
