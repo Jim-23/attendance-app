@@ -21,6 +21,25 @@ Completed attendance is calculated using the existing 15-minute rounding and
 automatic 30-minute lunch rule. Calendar session times show the recorded times;
 session durations show the calculated worked time.
 
+## Registration, roles and company-wide vacation
+
+**Apply the backend migration before deploying this version.** See
+[Supabase setup](./supabase/README.md) for deployment, first-admin provisioning,
+and database regression checks.
+
+Registration requires a single-use admin-generated invitation key. An invitation
+can be tied to one email and expires after 1–30 days. Existing accounts keep
+their roles. Admins use **Menu → Administrace** to edit names and roles,
+view user statistics, and create/revoke invitations. Account suspension and
+deletion are not included.
+
+**Celozávodní dovolená** uses the existing `mandatory_vacation` database value.
+Users explicitly add one weekday (8 hours), not a date range. It credits that
+day and shares the normal 20-day annual vacation allowance, including planned
+leave. Admin and user statistics both include it.
+
+Run all application regression tests with `npm test` (Node.js 22.18+).
+
 ## Development template
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test:calendar": "node --test src/lib/calendar.test.mjs",
+    "test": "node --test src/lib/*.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -3,6 +3,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { calculateWorkedMinutes, formatDuration, getAutomaticLunchStart } from '../lib/attendance'
 import { APP_TIMEZONE, formatTime } from '../lib/time'
 import { getCzechHolidays, getMonthDays, shiftMonth } from '../lib/calendar'
+import { leaveLabels } from '../lib/leave'
 
 interface CalendarSession {
   id: number
@@ -23,14 +24,6 @@ interface AttendanceCalendarProps {
   sessions: CalendarSession[]
   workDays: CalendarLeave[]
   today: string
-}
-
-const leaveLabels: Record<CalendarLeave['type'], string> = {
-  holiday: 'Svátek',
-  vacation: 'Dovolená',
-  sick_day: 'Sick day',
-  comp_time: 'Náhradní volno',
-  mandatory_vacation: 'Nařízená dovolená',
 }
 
 function AttendanceCalendar({ sessions, workDays, today }: AttendanceCalendarProps) {

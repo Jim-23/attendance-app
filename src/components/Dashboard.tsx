@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatInTimeZone } from 'date-fns-tz'
 import AttendanceCalendar from './AttendanceCalendar'
+import { getVacationUsedMinutes, leaveLabels, usesVacationAllowance } from '../lib/leave'
 
 import {
     formatTime,
@@ -53,6 +54,7 @@ interface DashboardProps {
     userId: string
     email: string
     onLogout: () => void
+    onOpenAdmin?: () => void
 }
 
 const PAGE_SIZE = 1000
@@ -64,7 +66,7 @@ const dashboardViews = [
 ] as const
 type DashboardView = typeof dashboardViews[number]['id']
 
-function Dashboard({ userId, email, onLogout }: DashboardProps) {
+function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
     const [view, setView] = useState<DashboardView>('dashboard')
     const [menuOpen, setMenuOpen] = useState(false)
     const [now, setNow] = useState(() => new Date())
@@ -78,7 +80,7 @@ function Dashboard({ userId, email, onLogout }: DashboardProps) {
     const [dailyBalances, setDailyBalances] = useState<
         ReturnType<typeof calculateDailyBalances>
     >([])
-    const [dayType, setDayType] = useState<'vacation' | 'sick_day' | 'comp_time'>('vacation')
+    const [dayType, setDayType] = useState<'vacation' | 'sick_day' | 'comp_time' | 'mandatory_vacation'>('vacation')
     const [dayDuration, setDayDuration] = useState(480)
     const [dayDateFrom, setDayDateFrom] = useState('')
     const [dayDateTo, setDayDateTo] = useState('')
@@ -113,13 +115,15 @@ function Dashboard({ userId, email, onLogout }: DashboardProps) {
             }
 
             const page = data ?? []
-            allWorkDays.push(...page)
+            allWorkDays.push(...page.map((day) => ({
+                ...day, duration_minutes: day.duration_minutes ?? 480,
+            })))
 
-            if (page.length < PAGE_SIZE) {
+            if (page.length === 0) {
                 break
             }
 
-            offset += PAGE_SIZE
+            offset += page.length
         }
 
         setWorkDays(allWorkDays)
@@ -171,11 +175,11 @@ function Dashboard({ userId, email, onLogout }: DashboardProps) {
             const page = data ?? []
             allSessions.push(...page)
 
-            if (page.length < PAGE_SIZE) {
+            if (page.length === 0) {
                 break
             }
 
-            offset += PAGE_SIZE
+            offset += page.length
         }
 
         setHistory(allSessions)
@@ -214,13 +218,15 @@ function Dashboard({ userId, email, onLogout }: DashboardProps) {
             }
 
             const page = data ?? []
-            allWorkDaysToDate.push(...page)
+            allWorkDaysToDate.push(...page.map((day) => ({
+                ...day, duration_minutes: day.duration_minutes ?? 480,
+            })))
 
-            if (page.length < PAGE_SIZE) {
+            if (page.length === 0) {
                 break
             }
 
-            offset += PAGE_SIZE
+            offset += page.length
         }
 
         const monthStart = new Date(
@@ -287,6 +293,11 @@ async function handleAddDayRecord() {
 
     const dateTo = dayDateTo || dayDateFrom
 
+    if (dayType === 'mandatory_vacation' && dateTo !== dayDateFrom) {
+        setMessage('Celozávodní dovolenou zadej pro jeden konkrétní den.')
+        return
+    }
+
     if (dateTo < dayDateFrom) {
         setMessage('Datum do nemůže být před datem od.')
         return
@@ -295,7 +306,9 @@ async function handleAddDayRecord() {
     const duration =
         dayType === 'comp_time'
             ? compHours * 60 + compMinutes
-            : dayDuration
+            : dayType === 'mandatory_vacation' || dayType === 'sick_day'
+              ? 480
+              : dayDuration
 
     setActionLoading(true)
     setMessage(null)
@@ -374,7 +387,7 @@ async function handleAddDayRecord() {
     // proto kontrolujeme každý rok samostatně.
 
     if (
-        dayType === 'vacation' ||
+        usesVacationAllowance(dayType) ||
         dayType === 'sick_day'
     ) {
         const requestedMinutesByYear =
@@ -394,7 +407,9 @@ async function handleAddDayRecord() {
                 .filter(
                     (day) =>
                         day.date.startsWith(year) &&
-                        day.type === dayType,
+                        (dayType === 'sick_day'
+                            ? day.type === 'sick_day'
+                            : usesVacationAllowance(day.type)),
                 )
                 .reduce(
                     (total, day) =>
@@ -403,7 +418,7 @@ async function handleAddDayRecord() {
                 )
 
             const limitMinutes =
-                dayType === 'vacation'
+                usesVacationAllowance(dayType)
                     ? vacationLimitMinutes
                     : sickDayLimitMinutes
 
@@ -419,7 +434,7 @@ async function handleAddDayRecord() {
                 )
 
                 const label =
-                    dayType === 'vacation'
+                    usesVacationAllowance(dayType)
                         ? 'dovolené'
                         : 'sick days'
 
@@ -796,12 +811,7 @@ const currentYearWorkDays = workDays.filter(
     (day) => day.date.startsWith(currentYear),
 )
 
-const vacationUsedMinutes = currentYearWorkDays
-    .filter((day) => day.type === 'vacation')
-    .reduce(
-        (total, day) => total + day.duration_minutes,
-        0,
-    )
+const vacationUsedMinutes = getVacationUsedMinutes(currentYearWorkDays)
 
 const sickDayUsedMinutes = currentYearWorkDays
     .filter((day) => day.type === 'sick_day')
@@ -885,6 +895,11 @@ return (
                                     {item.label}
                                 </button>
                             ))}
+                            {onOpenAdmin && (
+                                <button className="dashboard-menu-item" onClick={onOpenAdmin}>
+                                    Administrace
+                                </button>
+                            )}
                         </nav>
                     )}
                 </div>
@@ -1493,6 +1508,7 @@ return (
                                 type="date"
                                 value={dayDateTo}
                                 min={dayDateFrom}
+                                disabled={dayType === 'mandatory_vacation'}
                                 onChange={(event) =>
                                     setDayDateTo(
                                         event.target.value,
@@ -1509,14 +1525,18 @@ return (
                             <select
                                 id="day-type"
                                 value={dayType}
-                                onChange={(event) =>
+                                onChange={(event) => {
+                                    if (event.target.value === 'mandatory_vacation') {
+                                        setDayDateTo('')
+                                    }
                                     setDayType(
                                         event.target.value as
                                             | 'vacation'
                                             | 'sick_day'
-                                            | 'comp_time',
+                                            | 'comp_time'
+                                            | 'mandatory_vacation',
                                     )
-                                }
+                                }}
                             >
                                 <option value="vacation">
                                     Dovolená
@@ -1529,8 +1549,15 @@ return (
                                 <option value="comp_time">
                                     Náhradní volno
                                 </option>
+                                <option value="mandatory_vacation">
+                                    Celozávodní dovolená
+                                </option>
                             </select>
                         </div>
+                        <p className="calendar-note form-field-wide">
+                            Celozávodní dovolená: 8 hodin pro jeden pracovní den.
+                            Odečítá se ze společného ročního limitu dovolené.
+                        </p>
 
                         {dayType === 'vacation' && (
                             <div className="form-field">
@@ -1696,15 +1723,7 @@ return (
                                         <td>{day.date}</td>
 
                                         <td>
-                                            {day.type === 'vacation'
-                                                ? 'Dovolená'
-                                                : day.type ===
-                                                    'sick_day'
-                                                  ? 'Sick day'
-                                                  : day.type ===
-                                                      'comp_time'
-                                                    ? 'Náhradní volno'
-                                                    : day.type}
+                                            {leaveLabels[day.type]}
                                         </td>
 
                                         <td>

@@ -786,6 +786,15 @@ button:disabled {
     gap: 8px;
 }
 
+.admin-month {
+    max-width: 300px;
+    margin: 20px 0;
+}
+
+.admin-invitations {
+    margin-top: 20px;
+}
+
 
 /* =========================================================
    FORMS
