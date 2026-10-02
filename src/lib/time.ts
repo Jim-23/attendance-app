@@ -21,6 +21,18 @@ export function formatDate(timestamp: string): string {
   )
 }
 
+export function formatDateTimeLocal(timestamp: string): string {
+  return formatInTimeZone(
+    new Date(timestamp),
+    APP_TIMEZONE,
+    "yyyy-MM-dd'T'HH:mm",
+  )
+}
+
+export function parseDateTimeLocal(value: string): Date {
+  return fromZonedTime(value, APP_TIMEZONE)
+}
+
 export function getStartOfTodayUtc(): string {
   const today = formatInTimeZone(
     new Date(),

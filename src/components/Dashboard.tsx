@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatInTimeZone } from 'date-fns-tz'
 
@@ -8,6 +8,8 @@ import {
     getStartOfTodayUtc,
     getStartOfCurrentMonthUtc,
     APP_TIMEZONE,
+    formatDateTimeLocal,
+    parseDateTimeLocal,
 } from '../lib/time'
 import {
     calculateWorkedMinutes,
@@ -15,6 +17,7 @@ import {
     calculateCurrentWorkedMinutes,
     calculateRunningOvertime,
     formatDuration,
+    getAutomaticLunchStart,
     roundArrival,
     roundDeparture,
 } from '../lib/attendance'
@@ -74,6 +77,9 @@ function Dashboard({ userId, email, onLogout }: DashboardProps) {
     const [workDaysLoading, setWorkDaysLoading] = useState(true)
     const [compHours, setCompHours] = useState(0)
     const [compMinutes, setCompMinutes] = useState(15)
+    const [editingSessionId, setEditingSessionId] = useState<number | null>(null)
+    const [editedArrival, setEditedArrival] = useState('')
+    const [editedDeparture, setEditedDeparture] = useState('')
 
 
     const loadWorkDays = useCallback(async () => {
@@ -576,6 +582,78 @@ async function handleDeleteDayRecord(id: number) {
 
     setActionLoading(false)
   }
+
+  function handleEditSession(session: HistorySession) {
+    setEditingSessionId(session.id)
+    setEditedArrival(formatDateTimeLocal(session.started_at))
+    setEditedDeparture(formatDateTimeLocal(session.ended_at))
+    setMessage(null)
+  }
+
+  async function handleSaveSession(session: HistorySession) {
+    const arrival = parseDateTimeLocal(editedArrival)
+    const departure = parseDateTimeLocal(editedDeparture)
+
+    if (
+      !Number.isFinite(arrival.getTime()) ||
+      !Number.isFinite(departure.getTime())
+    ) {
+      setMessage('Zadej platný čas příchodu a odchodu.')
+      return
+    }
+
+    if (arrival >= departure) {
+      setMessage('Odchod musí být později než příchod.')
+      return
+    }
+
+    if (session.lunch_started_at) {
+      const lunchStartedAt = new Date(session.lunch_started_at)
+      if (
+        lunchStartedAt < arrival ||
+        lunchStartedAt >= departure
+      ) {
+        setMessage(
+          'Upravený čas musí zahrnovat již zaznamenaný začátek oběda.',
+        )
+        return
+      }
+    }
+
+    setActionLoading(true)
+    setMessage(null)
+
+    const { error } = await supabase
+      .from('work_sessions')
+      .update({
+        started_at: arrival.toISOString(),
+        ended_at: departure.toISOString(),
+      })
+      .eq('id', session.id)
+      .eq('user_id', userId)
+      .not('ended_at', 'is', null)
+      .select('id')
+      .single()
+
+    if (error) {
+      console.error('Failed to update work session:', error)
+      setMessage('Nepodařilo se upravit docházku.')
+    } else {
+      setEditingSessionId(null)
+      setMessage('Příchod a odchod byly upraveny.')
+      await loadHistory()
+    }
+
+    setActionLoading(false)
+  }
+
+  function handleCancelEdit() {
+    setEditingSessionId(null)
+    setEditedArrival('')
+    setEditedDeparture('')
+    setMessage(null)
+  }
+
 const todayDate = formatInTimeZone(
     new Date(),
     APP_TIMEZONE,
@@ -1014,6 +1092,7 @@ return (
                                     <th>Odchod</th>
                                     <th>Odpracováno</th>
                                     <th>Denní bilance</th>
+                                    <th>Akce</th>
                                 </tr>
                             </thead>
 
@@ -1027,6 +1106,13 @@ return (
                                             new Date(
                                                 session.ended_at,
                                             ),
+                                            session.lunch_started_at !==
+                                                null,
+                                        )
+                                    const automaticLunchStart =
+                                        getAutomaticLunchStart(
+                                            new Date(session.started_at),
+                                            new Date(session.ended_at),
                                             session.lunch_started_at !==
                                                 null,
                                         )
@@ -1055,7 +1141,8 @@ return (
                                         dailyBalance?.balanceMinutes
 
                                     return (
-                                        <tr key={session.id}>
+                                        <Fragment key={session.id}>
+                                        <tr>
                                             <td>
                                                 {formatDate(
                                                     session.started_at,
@@ -1086,7 +1173,11 @@ return (
                                                                       1000,
                                                           ).toISOString(),
                                                       )}`
-                                                    : '-'}
+                                                    : automaticLunchStart
+                                                      ? `Automaticky od ${formatTime(
+                                                            automaticLunchStart.toISOString(),
+                                                        )} (30 min)`
+                                                      : '-'}
                                             </td>
 
                                             <td>
@@ -1125,7 +1216,87 @@ return (
                                                       )
                                                     : '-'}
                                             </td>
+                                            <td>
+                                                    <button
+                                                        className="button button-secondary button-small"
+                                                        onClick={() =>
+                                                            handleEditSession(
+                                                                session,
+                                                            )
+                                                        }
+                                                        disabled={actionLoading}
+                                                    >
+                                                        Upravit
+                                                    </button>
+                                            </td>
                                         </tr>
+                                        {editingSessionId === session.id && (
+                                            <tr>
+                                                    <td colSpan={7}>
+                                                        <div className="session-edit-form">
+                                                            <div className="form-field">
+                                                                <label
+                                                                    htmlFor={`arrival-${session.id}`}
+                                                                >
+                                                                    Příchod
+                                                                </label>
+                                                                <input
+                                                                    id={`arrival-${session.id}`}
+                                                                    type="datetime-local"
+                                                                    value={editedArrival}
+                                                                    onChange={(event) =>
+                                                                        setEditedArrival(
+                                                                            event.target.value,
+                                                                        )
+                                                                    }
+                                                                    required
+                                                                />
+                                                            </div>
+                                                            <div className="form-field">
+                                                                <label
+                                                                    htmlFor={`departure-${session.id}`}
+                                                                >
+                                                                    Odchod
+                                                                </label>
+                                                                <input
+                                                                    id={`departure-${session.id}`}
+                                                                    type="datetime-local"
+                                                                    value={editedDeparture}
+                                                                    onChange={(event) =>
+                                                                        setEditedDeparture(
+                                                                            event.target.value,
+                                                                        )
+                                                                    }
+                                                                    required
+                                                                />
+                                                            </div>
+                                                            <div className="session-edit-actions">
+                                                                <button
+                                                                    className="button button-primary button-small"
+                                                                    onClick={() =>
+                                                                        handleSaveSession(
+                                                                            session,
+                                                                        )
+                                                                    }
+                                                                    disabled={actionLoading}
+                                                                >
+                                                                    {actionLoading
+                                                                        ? 'Ukládám...'
+                                                                        : 'Uložit'}
+                                                                </button>
+                                                                <button
+                                                                    className="button button-secondary button-small"
+                                                                    onClick={handleCancelEdit}
+                                                                    disabled={actionLoading}
+                                                                >
+                                                                    Zrušit
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                            </tr>
+                                        )}
+                                        </Fragment>
                                     )
                                 })}
                             </tbody>

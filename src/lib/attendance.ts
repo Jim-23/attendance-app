@@ -1,6 +1,8 @@
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
 const APP_TIMEZONE = 'Europe/Prague'
+const LUNCH_MINUTES = 30
+const AUTOMATIC_LUNCH_AFTER_MINUTES = 5 * 60
 
 export interface WorkSessionForBalance {
   started_at: string
@@ -86,6 +88,29 @@ export function roundDeparture(date: Date): Date {
   )
 }
 
+export function getAutomaticLunchStart(
+  arrival: Date,
+  departure: Date,
+  hasLunch: boolean,
+): Date | null {
+  if (hasLunch) {
+    return null
+  }
+
+  const roundedArrival = roundArrival(arrival)
+  const roundedDeparture = roundDeparture(departure)
+  const totalMinutes =
+    (roundedDeparture.getTime() - roundedArrival.getTime()) /
+    (1000 * 60)
+
+  return totalMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES
+    ? new Date(
+        roundedArrival.getTime() +
+          AUTOMATIC_LUNCH_AFTER_MINUTES * 60 * 1000,
+      )
+    : null
+}
+
 /**
  * Spočítá čistý odpracovaný čas.
  * Oběd má vždy 30 minut.
@@ -105,7 +130,11 @@ export function calculateWorkedMinutes(
       roundedArrival.getTime()) /
     (1000 * 60)
 
-  const lunchMinutes = hasLunch ? 30 : 0
+  const lunchMinutes =
+    hasLunch ||
+    totalMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES
+      ? LUNCH_MINUTES
+      : 0
 
   return Math.max(0, totalMinutes - lunchMinutes)
 }
@@ -125,7 +154,7 @@ export function calculateCurrentWorkedMinutes(
       roundedArrival.getTime()) /
     (1000 * 60)
 
-  const lunchMinutes = hasLunch ? 30 : 0
+  const lunchMinutes = hasLunch ? LUNCH_MINUTES : 0
 
   return Math.max(
     0,

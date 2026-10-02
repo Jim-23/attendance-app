@@ -599,6 +599,20 @@ button:disabled {
     background: var(--color-surface-hover);
 }
 
+.session-edit-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    align-items: end;
+    gap: 14px;
+    padding: 8px 0;
+}
+
+.session-edit-actions {
+    display: flex;
+    align-items: end;
+    gap: 8px;
+}
+
 
 /* =========================================================
    FORMS
