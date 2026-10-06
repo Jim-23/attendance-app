@@ -6,9 +6,9 @@ The dashboard shows today's date and attendance totals in `Europe/Prague`,
 followed by a read-only monthly calendar. Use the header menu to switch to
 History (including session corrections), Leave, or Statistics.
 
-Clicking **Příchod** or **Odchod** opens a date/time field prefilled with the
-current time, so a forgotten arrival or departure can be recorded with the real
-time right away. Future times are rejected, an arrival cannot fall inside an
+Clicking **Příchod** or **Odchod** opens a time field (today's date) prefilled
+with the current time, so the real arrival or departure time can be recorded
+right away. Changing the date of a completed session is done in History. Future times are rejected, an arrival cannot fall inside an
 already recorded session, and a departure must come after the arrival and any
 recorded lunch start.
 

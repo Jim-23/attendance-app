@@ -526,7 +526,7 @@ async function handleDeleteDayRecord(id: number) {
 
   function openTimePicker(action: 'arrival' | 'departure') {
     setPendingAction(action)
-    setPendingTime(formatDateTimeLocal(new Date().toISOString()))
+    setPendingTime(formatInTimeZone(new Date(), APP_TIMEZONE, 'HH:mm'))
     setMessage(null)
   }
 
@@ -536,14 +536,15 @@ async function handleDeleteDayRecord(id: number) {
   }
 
   function parsePendingTime(): Date | null {
-    const value = parseDateTimeLocal(pendingTime)
+    const today = formatInTimeZone(new Date(), APP_TIMEZONE, 'yyyy-MM-dd')
+    const value = parseDateTimeLocal(`${today}T${pendingTime}`)
 
-    if (!pendingTime || !Number.isFinite(value.getTime())) {
+    if (!/^\d{2}:\d{2}$/.test(pendingTime) || !Number.isFinite(value.getTime())) {
       setMessage('Zadej platný čas.')
       return null
     }
 
-    // datetime-local has minute precision, so allow the current minute.
+    // The time input has minute precision, so allow the current minute.
     if (value.getTime() > new Date().getTime() + 60_000) {
       setMessage('Čas nemůže být v budoucnosti.')
       return null
@@ -715,7 +716,7 @@ async function handleDeleteDayRecord(id: number) {
         <label className="form-field time-picker-field">
           <span>{label}</span>
           <input
-            type="datetime-local"
+            type="time"
             value={pendingTime}
             onChange={(event) => setPendingTime(event.target.value)}
             required
