@@ -92,6 +92,8 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
     const [editingSessionId, setEditingSessionId] = useState<number | null>(null)
     const [editedArrival, setEditedArrival] = useState('')
     const [editedDeparture, setEditedDeparture] = useState('')
+    const [pendingAction, setPendingAction] = useState<'arrival' | 'departure' | null>(null)
+    const [pendingTime, setPendingTime] = useState('')
 
 
     const loadWorkDays = useCallback(async () => {
@@ -522,20 +524,73 @@ async function handleDeleteDayRecord(id: number) {
     setActionLoading(false)
 }
 
+  function openTimePicker(action: 'arrival' | 'departure') {
+    setPendingAction(action)
+    setPendingTime(formatDateTimeLocal(new Date().toISOString()))
+    setMessage(null)
+  }
+
+  function closeTimePicker() {
+    setPendingAction(null)
+    setPendingTime('')
+  }
+
+  function parsePendingTime(): Date | null {
+    const value = parseDateTimeLocal(pendingTime)
+
+    if (!pendingTime || !Number.isFinite(value.getTime())) {
+      setMessage('Zadej platný čas.')
+      return null
+    }
+
+    // datetime-local has minute precision, so allow the current minute.
+    if (value.getTime() > new Date().getTime() + 60_000) {
+      setMessage('Čas nemůže být v budoucnosti.')
+      return null
+    }
+
+    return value
+  }
+
   async function handleArrival() {
     if (todayFullyCovered) {
         setMessage('Dnes nemáš žádnou pracovní povinnost.')
         return
     }
 
+    const arrival = parsePendingTime()
+    if (!arrival) {
+      return
+    }
+
     setActionLoading(true)
     setMessage(null)
+
+    const { data: overlapping, error: overlapError } = await supabase
+      .from('work_sessions')
+      .select('id')
+      .eq('user_id', userId)
+      .gt('ended_at', arrival.toISOString())
+      .limit(1)
+
+    if (overlapError) {
+      console.error('Failed to check overlapping sessions:', overlapError)
+      setMessage('Nepodařilo se ověřit předchozí docházku.')
+      setActionLoading(false)
+      return
+    }
+
+    if (overlapping.length > 0) {
+      setMessage('Zvolený příchod spadá do již zaznamenané docházky.')
+      setActionLoading(false)
+      return
+    }
 
     const { data, error } = await supabase
       .from('work_sessions')
       .insert({
         user_id: userId,
-        started_at: new Date().toISOString(),
+        started_at: arrival.toISOString(),
       })
       .select('id, started_at, ended_at, lunch_started_at')
       .single()
@@ -544,6 +599,7 @@ async function handleDeleteDayRecord(id: number) {
       console.error('Failed to record arrival:', error)
       if (error.code === '23505') {
         const openSession = await loadOpenSession()
+        closeTimePicker()
         if (openSession) {
           setMessage('Načtena otevřená docházka z jiného zařízení.')
         } else {
@@ -556,6 +612,7 @@ async function handleDeleteDayRecord(id: number) {
       }
     } else {
       setWorkSession(data)
+      closeTimePicker()
       setMessage('Příchod zaznamenán.')
     }
 
@@ -600,13 +657,31 @@ async function handleDeleteDayRecord(id: number) {
       return
     }
 
+    const departure = parsePendingTime()
+    if (!departure) {
+      return
+    }
+
+    if (departure <= new Date(workSession.started_at)) {
+      setMessage('Odchod musí být později než příchod.')
+      return
+    }
+
+    if (
+      workSession.lunch_started_at &&
+      departure <= new Date(workSession.lunch_started_at)
+    ) {
+      setMessage('Odchod musí být později než začátek oběda.')
+      return
+    }
+
     setActionLoading(true)
     setMessage(null)
 
     const { error } = await supabase
       .from('work_sessions')
       .update({
-        ended_at: new Date().toISOString(),
+        ended_at: departure.toISOString(),
       })
       .eq('id', workSession.id)
       .is('ended_at', null)
@@ -618,11 +693,54 @@ async function handleDeleteDayRecord(id: number) {
       setMessage('Nepodařilo se zaznamenat odchod.')
     } else {
         setWorkSession(null)
+        closeTimePicker()
         setMessage('Odchod zaznamenán.')
         await loadHistory()
     }
 
     setActionLoading(false)
+  }
+
+  function renderTimePicker(action: 'arrival' | 'departure') {
+    const label = action === 'arrival' ? 'Čas příchodu' : 'Čas odchodu'
+
+    return (
+      <form
+        className="time-picker"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void (action === 'arrival' ? handleArrival() : handleDeparture())
+        }}
+      >
+        <label className="form-field time-picker-field">
+          <span>{label}</span>
+          <input
+            type="datetime-local"
+            value={pendingTime}
+            onChange={(event) => setPendingTime(event.target.value)}
+            required
+            autoFocus
+          />
+        </label>
+        <div className="time-picker-actions">
+          <button
+            type="submit"
+            className="button button-primary"
+            disabled={actionLoading}
+          >
+            {actionLoading ? 'Ukládám...' : 'Potvrdit'}
+          </button>
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={closeTimePicker}
+            disabled={actionLoading}
+          >
+            Zrušit
+          </button>
+        </div>
+      </form>
+    )
   }
 
   function handleEditSession(session: HistorySession) {
@@ -1061,15 +1179,17 @@ return (
                                         </button>
                                     )}
 
-                                    <button
-                                        className="button button-primary"
-                                        onClick={handleDeparture}
-                                        disabled={actionLoading}
-                                    >
-                                        {actionLoading
-                                            ? 'Ukládám...'
-                                            : 'Odchod'}
-                                    </button>
+                                    {pendingAction === 'departure' ? (
+                                        renderTimePicker('departure')
+                                    ) : (
+                                        <button
+                                            className="button button-primary"
+                                            onClick={() => openTimePicker('departure')}
+                                            disabled={actionLoading}
+                                        >
+                                            Odchod
+                                        </button>
+                                    )}
                                 </div>
                             )}
                         </>
@@ -1100,15 +1220,17 @@ return (
                                 </strong>
                             </div>
 
-                            <button
-                                className="button button-primary button-large"
-                                onClick={handleArrival}
-                                disabled={actionLoading}
-                            >
-                                {actionLoading
-                                    ? 'Ukládám...'
-                                    : 'Příchod'}
-                            </button>
+                            {pendingAction === 'arrival' ? (
+                                renderTimePicker('arrival')
+                            ) : (
+                                <button
+                                    className="button button-primary button-large"
+                                    onClick={() => openTimePicker('arrival')}
+                                    disabled={actionLoading}
+                                >
+                                    Příchod
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>

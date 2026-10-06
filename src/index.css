@@ -1151,3 +1151,26 @@ button:disabled {
         font-size: 25px;
     }
 }
+.time-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.time-picker-field span {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.time-picker-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.time-picker-actions .button {
+    width: 100%;
+}
