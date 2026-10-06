@@ -11,7 +11,11 @@ are performed by the app build.
 1. Review and apply
    [202610020001_invitations_and_admin.sql](./migrations/202610020001_invitations_and_admin.sql)
    through the Supabase SQL editor or your migration runner. The file is
-   transactional and preserves existing profiles and attendance.
+   transactional and preserves existing profiles and attendance. Then apply
+   [202610060001_one_lunch_per_day.sql](./migrations/202610060001_one_lunch_per_day.sql),
+   which allows at most one recorded lunch per user and Prague day (by arrival
+   date) and requires the lunch to lie within its session. Existing duplicate
+   lunches are kept; the app counts only the first one of the day.
 2. If no existing administrator is present, promote a trusted **existing**
    account through the SQL editor as database owner:
 
@@ -79,7 +83,9 @@ database, then apply these files in order with `psql -v ON_ERROR_STOP=1`:
 
 1. [tests/fixture.sql](./tests/fixture.sql)
 2. [migrations/202610020001_invitations_and_admin.sql](./migrations/202610020001_invitations_and_admin.sql)
-3. [tests/invitations_and_admin.sql](./tests/invitations_and_admin.sql)
+3. [migrations/202610060001_one_lunch_per_day.sql](./migrations/202610060001_one_lunch_per_day.sql)
+4. [tests/invitations_and_admin.sql](./tests/invitations_and_admin.sql)
+5. [tests/one_lunch_per_day.sql](./tests/one_lunch_per_day.sql)
 
 The regression suite checks invalid/missing/reused/expired/revoked invitations,
 email binding, ignored role metadata, role and RLS restrictions, last-admin

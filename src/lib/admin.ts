@@ -1,7 +1,8 @@
 import {
   calculateDailyBalances,
   calculateRunningOvertime,
-  calculateWorkedMinutes,
+  calculateSessionWorkedMinutes,
+  getDailyLunchDeductions,
 } from './attendance'
 import type { WorkDayForBalance, WorkSessionForBalance } from './attendance'
 import { getVacationUsedMinutes } from './leave'
@@ -71,10 +72,11 @@ export function getUserStatistics(
     days.filter((day) => day.date <= today),
     requiredMinutes,
   )
+  const monthlyLunchDeductions = getDailyLunchDeductions(monthlySessions)
   const annualDays = days.filter((day) => day.date.startsWith(month.slice(0, 4)))
   return {
-    workedMinutes: monthlySessions.reduce((total, session) => total + calculateWorkedMinutes(
-      new Date(session.started_at), new Date(session.ended_at), session.lunch_started_at !== null,
+    workedMinutes: monthlySessions.reduce((total, session) => total + calculateSessionWorkedMinutes(
+      session, monthlyLunchDeductions.get(session) ?? null,
     ), 0),
     overtimeMinutes: calculateRunningOvertime(balances),
     vacationMinutes: getVacationUsedMinutes(annualDays),

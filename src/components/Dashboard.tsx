@@ -19,6 +19,9 @@ import {
     calculateRunningOvertime,
     formatDuration,
     getAutomaticLunchStart,
+    getDailyLunchDeductions,
+    calculateSessionWorkedMinutes,
+    hasLunchOnDate,
     roundArrival,
     roundDeparture,
 } from '../lib/attendance'
@@ -240,14 +243,15 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
                 new Date(session.started_at) >= monthStart,
         )
 
+        const monthLunchDeductions =
+            getDailyLunchDeductions(currentMonthSessions)
         const totalWorkedMinutes =
             currentMonthSessions.reduce(
                 (total, session) =>
                     total +
-                    calculateWorkedMinutes(
-                        new Date(session.started_at),
-                        new Date(session.ended_at),
-                        session.lunch_started_at !== null,
+                    calculateSessionWorkedMinutes(
+                        session,
+                        monthLunchDeductions.get(session) ?? null,
                     ),
                 0,
             )
@@ -625,7 +629,8 @@ async function handleDeleteDayRecord(id: number) {
       return
     }
 
-    if (workSession.lunch_started_at) {
+    if (lunchAlreadyTaken) {
+      setMessage('Oběd už byl dnes započítán.')
       return
     }
 
@@ -644,7 +649,11 @@ async function handleDeleteDayRecord(id: number) {
 
     if (error) {
       console.error('Failed to record lunch:', error)
-      setMessage('Nepodařilo se zaznamenat oběd.')
+      setMessage(
+        error.code === '23514'
+          ? 'Oběd už byl dnes započítán.'
+          : 'Nepodařilo se zaznamenat oběd.',
+      )
     } else {
       setWorkSession(data)
       setMessage('Oběd zaznamenán na 30 minut.')
@@ -841,6 +850,8 @@ const todayCompTimeMinutes = todayWorkDays
         0,
     )
 
+const historyLunchDeductions = getDailyLunchDeductions(history)
+
 const todayCompletedSessions = history.filter(
     (session) =>
         formatInTimeZone(
@@ -850,27 +861,44 @@ const todayCompletedSessions = history.filter(
         ) === todayDate,
 )
 
+const openSessionToday =
+    workSession && !workSession.ended_at &&
+    formatInTimeZone(new Date(workSession.started_at), APP_TIMEZONE, 'yyyy-MM-dd') === todayDate
+        ? workSession
+        : null
+
+const todayLunchDeductions = getDailyLunchDeductions<WorkSession>([
+    ...todayCompletedSessions,
+    ...(openSessionToday ? [openSessionToday] : []),
+])
+
 const todayCompletedWorkedMinutes =
     todayCompletedSessions.reduce(
         (total, session) =>
             total +
-            calculateWorkedMinutes(
-                new Date(session.started_at),
-                new Date(session.ended_at),
-                session.lunch_started_at !== null,
+            calculateSessionWorkedMinutes(
+                session,
+                todayLunchDeductions.get(session) ?? null,
             ),
         0,
     )
 
 const todayCurrentWorkedMinutes =
-    workSession && !workSession.ended_at &&
-    formatInTimeZone(new Date(workSession.started_at), APP_TIMEZONE, 'yyyy-MM-dd') === todayDate
+    openSessionToday
         ? calculateCurrentWorkedMinutes(
-              new Date(workSession.started_at),
+              new Date(openSessionToday.started_at),
               now,
-              workSession.lunch_started_at !== null,
+              todayLunchDeductions.get(openSessionToday) === 'recorded',
           )
         : 0
+
+// One lunch per day, counted by the Prague date of the open session's arrival.
+const lunchAlreadyTaken =
+    workSession !== null &&
+    hasLunchOnDate(
+        [...history, workSession],
+        formatInTimeZone(new Date(workSession.started_at), APP_TIMEZONE, 'yyyy-MM-dd'),
+    )
 
 const todayWorkedMinutes =
     todayCompletedWorkedMinutes +
@@ -1168,7 +1196,7 @@ return (
 
                             {!workSession.ended_at && (
                                 <div className="action-row">
-                                    {!workSession.lunch_started_at && (
+                                    {!lunchAlreadyTaken && (
                                         <button
                                             className="button button-secondary"
                                             onClick={handleLunch}
@@ -1330,23 +1358,19 @@ return (
 
                             <tbody>
                                 {history.map((session) => {
+                                    const lunchDeduction =
+                                        historyLunchDeductions.get(session) ?? null
                                     const workedMinutes =
-                                        calculateWorkedMinutes(
-                                            new Date(
-                                                session.started_at,
-                                            ),
-                                            new Date(
-                                                session.ended_at,
-                                            ),
-                                            session.lunch_started_at !==
-                                                null,
+                                        calculateSessionWorkedMinutes(
+                                            session,
+                                            lunchDeduction,
                                         )
                                     const automaticLunchStart =
                                         getAutomaticLunchStart(
                                             new Date(session.started_at),
                                             new Date(session.ended_at),
-                                            session.lunch_started_at !==
-                                                null,
+                                            false,
+                                            lunchDeduction === 'automatic',
                                         )
 
                                     const sessionDate =
@@ -1404,7 +1428,11 @@ return (
                                                                       60 *
                                                                       1000,
                                                           ).toISOString(),
-                                                      )}`
+                                                      )}${
+                                                          lunchDeduction === 'recorded'
+                                                              ? ''
+                                                              : ' (nezapočteno, oběd už byl tento den)'
+                                                      }`
                                                     : automaticLunchStart
                                                       ? `Automaticky od ${formatTime(
                                                             automaticLunchStart.toISOString(),

@@ -24,7 +24,10 @@ Run calendar date and holiday regression tests with `npm run test:calendar`
 (Node.js 22.18+).
 
 Completed attendance is calculated using the existing 15-minute rounding and
-automatic 30-minute lunch rule. Calendar session times show the recorded times;
+automatic 30-minute lunch rule. Only one lunch is deducted per day (by arrival
+date): a recorded lunch takes precedence, otherwise the first completed session
+longer than 5 hours gets the automatic lunch. **Začít oběd** is hidden once the
+day already has a lunch. Calendar session times show the recorded times;
 session durations show the calculated worked time.
 
 ## Registration, roles and company-wide vacation

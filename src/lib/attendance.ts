@@ -88,12 +88,97 @@ export function roundDeparture(date: Date): Date {
   )
 }
 
+export interface LunchSession {
+  started_at: string
+  ended_at: string | null
+  lunch_started_at: string | null
+}
+
+export type LunchDeduction = 'recorded' | 'automatic' | null
+
+function getPragueDate(timestamp: string): string {
+  return formatInTimeZone(new Date(timestamp), APP_TIMEZONE, 'yyyy-MM-dd')
+}
+
+function exceedsAutomaticLunchThreshold(arrival: Date, departure: Date): boolean {
+  const totalMinutes =
+    (roundDeparture(departure).getTime() - roundArrival(arrival).getTime()) /
+    (1000 * 60)
+
+  return totalMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES
+}
+
+/**
+ * Každý den (podle data příchodu v Praze) má nejvýše jeden oběd.
+ * Zaznamenaný oběd má přednost. Pokud v daný den žádný není,
+ * automatický oběd dostane první dokončená session delší než 5 hodin.
+ */
+export function getDailyLunchDeductions<T extends LunchSession>(
+  sessions: T[],
+): Map<T, LunchDeduction> {
+  const deductions = new Map<T, LunchDeduction>()
+  const sessionsByDate = new Map<string, T[]>()
+
+  for (const session of sessions) {
+    deductions.set(session, null)
+    const date = getPragueDate(session.started_at)
+    const daySessions = sessionsByDate.get(date) ?? []
+    daySessions.push(session)
+    sessionsByDate.set(date, daySessions)
+  }
+
+  for (const daySessions of sessionsByDate.values()) {
+    const ordered = [...daySessions].sort(
+      (left, right) =>
+        new Date(left.started_at).getTime() -
+        new Date(right.started_at).getTime(),
+    )
+
+    const recorded = ordered.find(
+      (session) => session.lunch_started_at !== null,
+    )
+
+    if (recorded) {
+      deductions.set(recorded, 'recorded')
+      continue
+    }
+
+    const automatic = ordered.find(
+      (session) =>
+        session.ended_at !== null &&
+        exceedsAutomaticLunchThreshold(
+          new Date(session.started_at),
+          new Date(session.ended_at),
+        ),
+    )
+
+    if (automatic) {
+      deductions.set(automatic, 'automatic')
+    }
+  }
+
+  return deductions
+}
+
+export function hasLunchOnDate(
+  sessions: LunchSession[],
+  date: string,
+): boolean {
+  const daySessions = sessions.filter(
+    (session) => getPragueDate(session.started_at) === date,
+  )
+  const deductions = getDailyLunchDeductions(daySessions)
+
+  return [...deductions.values()].some((deduction) => deduction !== null)
+}
+
 export function getAutomaticLunchStart(
   arrival: Date,
   departure: Date,
   hasLunch: boolean,
+  allowAutomaticLunch = true,
 ): Date | null {
-  if (hasLunch) {
+  if (hasLunch || !allowAutomaticLunch) {
     return null
   }
 
@@ -121,6 +206,7 @@ export function calculateWorkedMinutes(
   arrival: Date,
   departure: Date,
   hasLunch: boolean,
+  allowAutomaticLunch = true,
 ): number {
   const roundedArrival = roundArrival(arrival)
   const roundedDeparture = roundDeparture(departure)
@@ -132,7 +218,8 @@ export function calculateWorkedMinutes(
 
   const lunchMinutes =
     hasLunch ||
-    totalMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES
+    (allowAutomaticLunch &&
+      totalMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES)
       ? LUNCH_MINUTES
       : 0
 
@@ -140,7 +227,18 @@ export function calculateWorkedMinutes(
 }
 
 
-// NOVÉ
+export function calculateSessionWorkedMinutes(
+  session: WorkSessionForBalance,
+  deduction: LunchDeduction,
+): number {
+  return calculateWorkedMinutes(
+    new Date(session.started_at),
+    new Date(session.ended_at),
+    deduction === 'recorded',
+    deduction === 'automatic',
+  )
+}
+
 export function calculateCurrentWorkedMinutes(
   arrival: Date,
   now: Date,
@@ -229,6 +327,7 @@ export function calculateDailyBalances(
   requiredMinutes = 480,
 ): DailyBalance[] {
   const balances: DailyBalance[] = []
+  const lunchDeductions = getDailyLunchDeductions(sessions)
 
   /*
    * Sesbíráme všechny datumy, které mají buď pracovní session,
@@ -276,10 +375,9 @@ export function calculateDailyBalances(
       (total, session) => {
         return (
           total +
-          calculateWorkedMinutes(
-            new Date(session.started_at),
-            new Date(session.ended_at),
-            session.lunch_started_at !== null,
+          calculateSessionWorkedMinutes(
+            session,
+            lunchDeductions.get(session) ?? null,
           )
         )
       },

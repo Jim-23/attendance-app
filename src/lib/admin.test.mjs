@@ -23,7 +23,7 @@ function loadModule(path) {
 
 const { getVacationUsedMinutes, leaveLabels } = loadModule(resolve('src/lib/leave.ts'))
 const { getUserStatistics, getInvitationStatus, isAdminUser } = loadModule(resolve('src/lib/admin.ts'))
-const { calculateDailyBalances } = loadModule(resolve('src/lib/attendance.ts'))
+const { calculateDailyBalances, getDailyLunchDeductions, hasLunchOnDate } = loadModule(resolve('src/lib/attendance.ts'))
 
 test('company-wide leave shares vacation allowance and credits the day once', () => {
   const days = [
@@ -75,4 +75,32 @@ test('role response validation rejects unexpected or client-supplied roles', () 
   assert.equal(isAdminUser(user), true)
   assert.equal(isAdminUser({ ...user, role: 'owner' }), false)
   assert.equal(isAdminUser({ role: 'admin' }), false)
+})
+
+test('only one lunch is deducted per Prague day', () => {
+  // Prague is UTC+2 on these dates.
+  const morning = { started_at: '2026-10-06T05:00:00Z', ended_at: '2026-10-06T11:00:00Z', lunch_started_at: null }
+  const afternoon = { started_at: '2026-10-06T12:00:00Z', ended_at: '2026-10-06T18:00:00Z', lunch_started_at: null }
+  const automatic = getDailyLunchDeductions([afternoon, morning])
+  assert.equal(automatic.get(morning), 'automatic')
+  assert.equal(automatic.get(afternoon), null)
+  // 6 h + 6 h with a single 30-minute lunch.
+  assert.equal(calculateDailyBalances([morning, afternoon], [])[0].workedMinutes, 690)
+
+  const recordedLater = { ...afternoon, lunch_started_at: '2026-10-06T13:00:00Z' }
+  const withRecorded = getDailyLunchDeductions([morning, recordedLater])
+  assert.equal(withRecorded.get(morning), null)
+  assert.equal(withRecorded.get(recordedLater), 'recorded')
+
+  const first = { started_at: '2026-10-06T05:00:00Z', ended_at: '2026-10-06T07:00:00Z', lunch_started_at: '2026-10-06T06:00:00Z' }
+  const second = { started_at: '2026-10-06T08:00:00Z', ended_at: '2026-10-06T10:00:00Z', lunch_started_at: '2026-10-06T09:00:00Z' }
+  const duplicates = getDailyLunchDeductions([second, first])
+  assert.equal(duplicates.get(first), 'recorded')
+  assert.equal(duplicates.get(second), null)
+  assert.equal(calculateDailyBalances([first, second], [])[0].workedMinutes, 210)
+
+  const open = { started_at: '2026-10-06T12:00:00Z', ended_at: null, lunch_started_at: null }
+  assert.equal(hasLunchOnDate([open], '2026-10-06'), false)
+  assert.equal(hasLunchOnDate([morning, open], '2026-10-06'), true)
+  assert.equal(hasLunchOnDate([morning, open], '2026-10-07'), false)
 })

@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { formatInTimeZone } from 'date-fns-tz'
-import { calculateWorkedMinutes, formatDuration, getAutomaticLunchStart } from '../lib/attendance'
+import {
+  calculateWorkedMinutes,
+  formatDuration,
+  getAutomaticLunchStart,
+  getDailyLunchDeductions,
+} from '../lib/attendance'
 import { APP_TIMEZONE, formatTime } from '../lib/time'
 import { getCzechHolidays, getMonthDays, shiftMonth } from '../lib/calendar'
 import { leaveLabels } from '../lib/leave'
@@ -46,6 +51,8 @@ function AttendanceCalendar({ sessions, workDays, today }: AttendanceCalendarPro
     records.push(session)
     sessionsByDate.set(date, records)
   }
+
+  const lunchDeductions = getDailyLunchDeductions(sessions)
 
   const leaveByDate = new Map<string, CalendarLeave[]>()
   for (const record of workDays) {
@@ -98,10 +105,11 @@ function AttendanceCalendar({ sessions, workDays, today }: AttendanceCalendarPro
                       <p className="calendar-event calendar-holiday">{holidays.get(day.date)}</p>
                     )}
                     {(sessionsByDate.get(day.date) ?? []).map((session) => {
+                      const lunchDeduction = lunchDeductions.get(session) ?? null
                       const automaticLunch = session.ended_at
                         ? getAutomaticLunchStart(
                             new Date(session.started_at), new Date(session.ended_at),
-                            session.lunch_started_at !== null,
+                            false, lunchDeduction === 'automatic',
                           )
                         : null
                       return (
@@ -111,11 +119,12 @@ function AttendanceCalendar({ sessions, workDays, today }: AttendanceCalendarPro
                         {session.ended_at && (
                           <span>{formatDuration(calculateWorkedMinutes(
                             new Date(session.started_at), new Date(session.ended_at),
-                            session.lunch_started_at !== null,
+                            lunchDeduction === 'recorded', lunchDeduction === 'automatic',
                           ), false)}</span>
                         )}
                         {session.lunch_started_at
-                          ? <span>Oběd {formatTime(session.lunch_started_at)} (30 min)</span>
+                          ? <span>Oběd {formatTime(session.lunch_started_at)} {lunchDeduction === 'recorded'
+                            ? '(30 min)' : '(nezapočteno)'}</span>
                           : automaticLunch && (
                             <span>Automatický oběd {formatTime(automaticLunch.toISOString())} (30 min)</span>
                           )}
