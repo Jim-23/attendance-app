@@ -82,6 +82,25 @@ const dashboardViews = [
 ] as const
 type DashboardView = typeof dashboardViews[number]['id']
 
+function getDateRange(from: string, to: string): string[] {
+    const dates: string[] = []
+    const current = new Date(`${from}T00:00:00Z`)
+    const end = new Date(`${to}T00:00:00Z`)
+
+    while (current <= end) {
+        dates.push(current.toISOString().slice(0, 10))
+        current.setUTCDate(current.getUTCDate() + 1)
+    }
+
+    return dates
+}
+
+function formatDayLabel(date: string): string {
+    return new Intl.DateTimeFormat('cs-CZ', {
+        weekday: 'short', day: 'numeric', month: 'numeric', year: 'numeric', timeZone: 'UTC',
+    }).format(new Date(`${date}T00:00:00Z`))
+}
+
 function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
     const [view, setView] = useState<DashboardView>('dashboard')
     const [menuOpen, setMenuOpen] = useState(false)
@@ -117,6 +136,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
     const [editedDeparture, setEditedDeparture] = useState('')
     const [pendingAction, setPendingAction] = useState<'arrival' | 'departure' | null>(null)
     const [pendingTime, setPendingTime] = useState('')
+    const [pendingDate, setPendingDate] = useState('')
 
 
     const loadWorkDays = useCallback(async () => {
@@ -568,19 +588,43 @@ async function handleDeleteDayRecord(id: number) {
 }
 
   function openTimePicker(action: 'arrival' | 'departure') {
+    const current = new Date()
+    const today = formatInTimeZone(current, APP_TIMEZONE, 'yyyy-MM-dd')
     setPendingAction(action)
-    setPendingTime(formatInTimeZone(new Date(), APP_TIMEZONE, 'HH:mm'))
+    setPendingDate(today)
+    setPendingTime(formatInTimeZone(current, APP_TIMEZONE, 'HH:mm'))
     setMessage(null)
+
+    // A session left open from an earlier day is most likely finished on its
+    // arrival day: suggest arrival + 8 h 30 min, at the latest 23:45 that day.
+    if (action === 'departure' && workSession) {
+      const startDate = formatInTimeZone(
+        new Date(workSession.started_at), APP_TIMEZONE, 'yyyy-MM-dd',
+      )
+
+      if (startDate < today) {
+        const suggested = new Date(
+          new Date(workSession.started_at).getTime() + 510 * 60 * 1000,
+        )
+        const suggestedTime =
+          formatInTimeZone(suggested, APP_TIMEZONE, 'yyyy-MM-dd') === startDate
+            ? formatInTimeZone(suggested, APP_TIMEZONE, 'HH:mm')
+            : '23:45'
+        setPendingDate(startDate)
+        setPendingTime(suggestedTime)
+      }
+    }
   }
 
   function closeTimePicker() {
     setPendingAction(null)
     setPendingTime('')
+    setPendingDate('')
   }
 
-  function parsePendingTime(): Date | null {
-    const today = formatInTimeZone(new Date(), APP_TIMEZONE, 'yyyy-MM-dd')
-    const value = parseDateTimeLocal(`${today}T${pendingTime}`)
+  function parsePendingTime(date?: string): Date | null {
+    const day = date || formatInTimeZone(new Date(), APP_TIMEZONE, 'yyyy-MM-dd')
+    const value = parseDateTimeLocal(`${day}T${pendingTime}`)
 
     if (!/^\d{2}:\d{2}$/.test(pendingTime) || !Number.isFinite(value.getTime())) {
       setMessage('Zadej platný čas.')
@@ -706,7 +750,7 @@ async function handleDeleteDayRecord(id: number) {
       return
     }
 
-    const departure = parsePendingTime()
+    const departure = parsePendingTime(pendingDate)
     if (!departure) {
       return
     }
@@ -752,6 +796,10 @@ async function handleDeleteDayRecord(id: number) {
 
   function renderTimePicker(action: 'arrival' | 'departure') {
     const label = action === 'arrival' ? 'Čas příchodu' : 'Čas odchodu'
+    const departureDates =
+      action === 'departure' && openSessionStartDate && openSessionStartDate < todayDate
+        ? getDateRange(openSessionStartDate, todayDate)
+        : []
 
     return (
       <form
@@ -761,6 +809,24 @@ async function handleDeleteDayRecord(id: number) {
           void (action === 'arrival' ? handleArrival() : handleDeparture())
         }}
       >
+        {departureDates.length > 0 && (
+          <div className="form-field time-picker-field">
+            <label htmlFor="departure-date">Den odchodu</label>
+            <select
+              id="departure-date"
+              value={pendingDate}
+              onChange={(event) => setPendingDate(event.target.value)}
+              disabled={actionLoading}
+            >
+              {departureDates.map((date) => (
+                <option key={date} value={date}>
+                  {formatDayLabel(date)}
+                  {date === todayDate ? ' (dnes)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="form-field time-picker-field">
           <label htmlFor={`${action}-time`}>{label}</label>
           <TimeInput
@@ -875,7 +941,13 @@ async function handleDeleteDayRecord(id: number) {
 
     if (error) {
       console.error('Failed to delete work session:', error)
-      setMessage('Nepodařilo se smazat docházku.')
+      // PGRST116: no row was deleted (missing delete policy or record already gone).
+      setMessage(
+        error.code === 'PGRST116'
+          ? 'Záznam nelze smazat – chybí oprávnění v databázi, nebo byl záznam už smazán.'
+          : 'Nepodařilo se smazat docházku.',
+      )
+      await Promise.all([loadHistory(), loadOpenSession()])
     } else {
       if (workSession?.id === id) {
         closeTimePicker()
@@ -970,6 +1042,11 @@ const todayCompletedSessions = history.filter(
             'yyyy-MM-dd',
         ) === todayDate,
 )
+
+const openSessionStartDate =
+    workSession && !workSession.ended_at
+        ? formatInTimeZone(new Date(workSession.started_at), APP_TIMEZONE, 'yyyy-MM-dd')
+        : null
 
 const openSessionToday =
     workSession && !workSession.ended_at &&
@@ -1203,6 +1280,13 @@ return (
                                 </span>
                             </div>
 
+                            {openSessionStartDate && openSessionStartDate < todayDate && (
+                                <p className="message message-info message-block" role="status">
+                                    Docházka z {formatDayLabel(openSessionStartDate)} nebyla ukončena.
+                                    Zadej odchod – den odchodu můžeš vybrat.
+                                </p>
+                            )}
+
                             <div className="today-grid">
                                 <div className="info-card">
                                     <span className="info-label">
@@ -1303,7 +1387,7 @@ return (
 
                             {!workSession.ended_at && (
                                 <div className="action-row">
-                                    {!lunchAlreadyTaken && (
+                                    {!lunchAlreadyTaken && openSessionStartDate === todayDate && (
                                         <button
                                             className="button button-secondary"
                                             onClick={handleLunch}

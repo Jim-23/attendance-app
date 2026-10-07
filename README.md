@@ -9,7 +9,10 @@ at the bottom of the menu. Times are always entered in 24-hour format.
 
 Clicking **Příchod** or **Odchod** opens a 24-hour time picker (today's date)
 prefilled with the current time, so the real arrival or departure time can be recorded
-right away. Changing the date of a completed session is done in History. Future times are rejected, an arrival cannot fall inside an
+right away. If the running session started on an earlier day (a forgotten
+departure), the dashboard says so and the **Odchod** picker also offers the
+day of departure, defaulting to the arrival day with arrival + 8 h 30 min
+(at most 23:45); **Začít oběd** is hidden for such a session. Changing the date of a completed session is done in History. Future times are rejected, an arrival cannot fall inside an
 already recorded session, and a departure must come after the arrival and any
 recorded lunch start.
 
