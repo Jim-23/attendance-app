@@ -82,8 +82,8 @@ interface DashboardProps {
 const PAGE_SIZE = 1000
 const dashboardViews = [
     { id: 'dashboard', label: 'Dnešní přehled' },
-    { id: 'history', label: 'Historie' },
     { id: 'leave', label: 'Volno' },
+    { id: 'history', label: 'Historie' },
     { id: 'statistics', label: 'Statistiky' },
 ] as const
 type DashboardView = typeof dashboardViews[number]['id']
@@ -1618,12 +1618,6 @@ return (
 
             {view === 'statistics' && (
             <section className="dashboard-section">
-                <div className="section-heading">
-                    <div>
-                        <p className="section-eyebrow">STATISTIKY</p>
-                        <h2>Statistiky</h2>
-                    </div>
-                </div>
                 <div className="form-field">
                     <label htmlFor="statistics-month">Měsíc</label>
                     <MonthInput
