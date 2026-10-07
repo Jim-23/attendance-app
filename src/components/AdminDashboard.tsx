@@ -9,6 +9,9 @@ import type { WorkDayForBalance, WorkSessionForBalance } from '../lib/attendance
 import { formatDuration } from '../lib/attendance'
 import { formatDate, formatDateTimeLocal, formatTime } from '../lib/time'
 import { leaveLabels } from '../lib/leave'
+import { getMonthlyStatistics } from '../lib/monthly'
+import type { MonthlySession } from '../lib/monthly'
+import MonthlyStatisticsCards from './MonthlyStatisticsCards'
 
 interface AdminDashboardProps {
   onBack: () => void
@@ -53,6 +56,7 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
   const [attendance, setAttendance] = useState<{
     userId: string
     sessions: WorkSessionForBalance[]
+    allSessions: MonthlySession[]
     days: WorkDayForBalance[]
     openSession: string | null
   } | null>(null)
@@ -82,11 +86,12 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
     if (!selectedId) return
     async function loadAttendance() {
       const sessions: WorkSessionForBalance[] = []
+      const allSessions: MonthlySession[] = []
       const days: WorkDayForBalance[] = []
       let openSession: string | null = null
       for (let offset = 0; ; ) {
         const { data, error } = await supabase.from('work_sessions')
-          .select('started_at, ended_at, lunch_started_at')
+          .select('started_at, ended_at, lunch_started_at, planned_departure_at')
           .eq('user_id', selectedId).order('started_at').order('id')
           .range(offset, offset + 999)
         if (!active) return
@@ -97,6 +102,7 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
           return
         }
         for (const session of data ?? []) {
+          allSessions.push(session)
           if (session.ended_at) sessions.push(session)
           else openSession = session.started_at
         }
@@ -120,7 +126,7 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
         if (!data?.length) break
         offset += data.length
       }
-      if (active) setAttendance({ userId: selectedId, sessions, days, openSession })
+      if (active) setAttendance({ userId: selectedId, sessions, allSessions, days, openSession })
     }
     void loadAttendance()
     return () => { active = false }
@@ -192,6 +198,11 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
   const stats = attendance?.userId === selectedId && selectedUser
     ? getUserStatistics(attendance.sessions, attendance.days, month, selectedUser.daily_work_minutes)
     : null
+  const monthlyStats = attendance?.userId === selectedId && selectedUser
+    ? getMonthlyStatistics(
+        attendance.allSessions, attendance.days, month, new Date(), selectedUser.daily_work_minutes,
+      )
+    : null
 
   return (
     <div className="dashboard">
@@ -242,9 +253,8 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
                     : 'Načítám statistiky...'}</p>
                 ) : (
                   <>
+                    {monthlyStats && <MonthlyStatisticsCards statistics={monthlyStats} />}
                     <div className="stats-grid">
-                      <div className="stat-card"><span className="stat-label">Odpracováno v měsíci {month}</span>
-                        <strong className="stat-value">{formatDuration(stats.workedMinutes, false)}</strong></div>
                       <div className="stat-card"><span className="stat-label">Přesčasový účet k dnešku</span>
                         <strong className="stat-value">{formatDuration(stats.overtimeMinutes)}</strong></div>
                       <div className="stat-card"><span className="stat-label">Dovolená v roce {month.slice(0, 4)} (včetně celozávodní)</span>
@@ -253,7 +263,10 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
                         <strong className="stat-value">{formatDuration(stats.sickMinutes, false)}</strong></div>
                     </div>
                     {attendance?.openSession && <p>Otevřená docházka od {formatDate(attendance.openSession)} {formatTime(attendance.openSession)}.</p>}
-                    <p className="calendar-note">Statistiky zahrnují pouze dokončené pracovní záznamy. Roční volno zahrnuje i plánované záznamy.</p>
+                    <p className="calendar-note">
+                      Fond nezahrnuje víkendy a svátky. Splněno zahrnuje dokončenou práci a volno
+                      do dneška; budoucí plány jsou zvlášť. Roční volno zahrnuje i plánované záznamy.
+                    </p>
                     <h3>Docházka v měsíci</h3>
                     <div className="table-wrapper"><table>
                       <thead><tr><th>Datum</th><th>Příchod</th><th>Odchod</th></tr></thead>

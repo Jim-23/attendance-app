@@ -87,7 +87,7 @@ function AttendanceCalendar({
         </div>
       </div>
       <p className="calendar-note">
-        Přehled docházky, volna a českých svátků. Svátky jsou informativní a nemění bilanci.
+        Přehled docházky, volna a českých svátků. České svátky se automaticky odečítají z měsíčního fondu.
         {onSelectDate && ' Kliknutím na den můžeš upravit docházku a volno.'}
       </p>
       <div className="calendar-scroll">

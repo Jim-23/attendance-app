@@ -9,11 +9,12 @@ import { validateSessionChange } from '../lib/sessions'
 import type { SessionChange } from '../lib/sessions'
 import CalendarDayPanel from './CalendarDayPanel'
 import { getCzechHolidays } from '../lib/calendar'
+import { getMonthlyStatistics } from '../lib/monthly'
+import MonthlyStatisticsCards from './MonthlyStatisticsCards'
 
 import {
     formatTime,
     formatDate,
-    getStartOfCurrentMonthUtc,
     APP_TIMEZONE,
     formatDateTimeLocal,
     parseDateTimeLocal,
@@ -120,7 +121,9 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
         [],
     )
     const [history, setHistory] = useState<HistorySession[]>([])
-    const [monthlyWorkedMinutes, setMonthlyWorkedMinutes] = useState(0)
+    const [statisticsMonth, setStatisticsMonth] = useState(
+        () => formatInTimeZone(new Date(), APP_TIMEZONE, 'yyyy-MM'),
+    )
     const [monthlyOvertimeMinutes, setMonthlyOvertimeMinutes] = useState(0)
     const [dailyBalances, setDailyBalances] = useState<
         ReturnType<typeof calculateDailyBalances>
@@ -287,28 +290,6 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
             offset += page.length
         }
 
-        const monthStart = new Date(
-            getStartOfCurrentMonthUtc(),
-        )
-
-        const currentMonthSessions = allSessions.filter(
-            (session) =>
-                new Date(session.started_at) >= monthStart,
-        )
-
-        const monthLunchDeductions =
-            getDailyLunchDeductions(currentMonthSessions)
-        const totalWorkedMinutes =
-            currentMonthSessions.reduce(
-                (total, session) =>
-                    total +
-                    calculateSessionWorkedMinutes(
-                        session,
-                        monthLunchDeductions.get(session) ?? null,
-                    ),
-                0,
-            )
-
         // Future leave must not affect the overtime balance yet.
         const sessionsToDate = allSessions.filter((session) => {
             const sessionDate = formatInTimeZone(
@@ -325,7 +306,6 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
             allWorkDaysToDate,
         )
         setDailyBalances(dailyBalances)
-        setMonthlyWorkedMinutes(totalWorkedMinutes)
         setMonthlyOvertimeMinutes(
             calculateRunningOvertime(dailyBalances),
         )
@@ -1095,6 +1075,12 @@ const todayDate = formatInTimeZone(
     APP_TIMEZONE,
     'yyyy-MM-dd',
 )
+const monthlyStatistics = getMonthlyStatistics(
+    workSession ? [...history, workSession] : history,
+    workDays,
+    statisticsMonth,
+    now,
+)
 
 const todayWorkDays = workDays.filter(
     (day) => day.date === todayDate,
@@ -1637,18 +1623,26 @@ return (
                         <h2>Statistiky</h2>
                     </div>
                 </div>
-
+                <div className="form-field">
+                    <label htmlFor="statistics-month">Měsíc</label>
+                    <input
+                        id="statistics-month"
+                        type="month"
+                        value={statisticsMonth}
+                        onChange={(event) => {
+                            if (/^\d{4}-\d{2}$/.test(event.target.value)) {
+                                setStatisticsMonth(event.target.value)
+                            }
+                        }}
+                    />
+                </div>
+                <p className="calendar-note">
+                    Fond je 8 hodin za každý pracovní den mimo víkendy a české svátky.
+                    Volno se započítává do splnění fondu, nesnižuje jeho výši.
+                    Práce o víkendu nebo ve svátek se započítá jako dokončená práce.
+                </p>
+                <MonthlyStatisticsCards statistics={monthlyStatistics} />
                 <div className="stats-grid">
-                    <div className="stat-card">
-                        <span className="stat-label">
-                            Odpracováno tento měsíc
-                        </span>
-
-                        <strong className="stat-value">
-                            {formatDuration(monthlyWorkedMinutes)}
-                        </strong>
-                    </div>
-
                     <div className="stat-card">
                         <span className="stat-label">
                             Přesčasový účet k dnešnímu dni

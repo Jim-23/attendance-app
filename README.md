@@ -33,9 +33,9 @@ completed sessions, leave, and the single daily lunch deduction. Before arrival,
 departure; it can be earlier or later than fulfilling the daily requirement.
 
 The calendar displays recorded sessions and leave, plus Czech public holidays
-(including Good Friday and Easter Monday). These holiday markers are
-informational only: they do not create leave records or change attendance
-balances. Navigate between months or use **Dnes** to return to the current month.
+(including Good Friday and Easter Monday). These holiday markers do not create
+leave records, but automatically exclude the day from the monthly Fond.
+Navigate between months or use **Dnes** to return to the current month.
 On small screens the calendar scrolls horizontally.
 
 Click a day (or its date button) to open the day panel. There you can add,
@@ -56,6 +56,33 @@ date): a recorded lunch takes precedence, otherwise the first completed session
 longer than 5 hours gets the automatic lunch. **Začít oběd** is hidden once the
 day already has a lunch. Calendar session times show the recorded times;
 session durations show the calculated worked time.
+
+## Monthly statistics
+
+**Statistiky** has a month selector and shows:
+
+- **Měsíční fond:** 8 net hours per weekday, excluding Czech public holidays
+  (including Easter) and additional `holiday` records. A holiday on a weekend
+  does not remove another workday. The same holiday is never excluded twice.
+- **Dokončená práce:** only closed sessions, with the normal rounding and daily
+  lunch deduction. Sessions are assigned to their Prague arrival date, as in
+  History. Weekend/holiday work still counts as work.
+- **Započtené volno:** vacation (8/4 h), company-wide vacation, sick day, and
+  compensatory leave at their recorded durations on working days through today.
+  Leave on a weekend or holiday cannot fulfil Fond a second time. Leave credits
+  are capped at the daily requirement for each date.
+- **Splněno z fondu** and **Zbývá splnit:** completed work plus credited leave
+  versus the full Fond. Vacation does not reduce the baseline Fond.
+- **Plánovaná práce**, **Plánované volno**, and **Celkem po splnění plánů:**
+  projections using open sessions with planned departures and future leave,
+  kept separate from already fulfilled hours. An unplanned open session is
+  not counted as finished or projected work.
+
+Editing, adding, or deleting attendance/leave recalculates these figures from
+the loaded records; there is no persisted monthly total to become stale.
+Admins use the same calculation with each user's configured daily requirement.
+The existing cumulative overtime account remains a separate calculation and is
+not the monthly Fond balance.
 
 ## Registration, roles and company-wide vacation
 
