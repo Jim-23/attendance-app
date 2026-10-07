@@ -22,6 +22,8 @@ import {
     calculateWorkedMinutes,
     calculateDailyBalances,
     calculateCurrentWorkedMinutes,
+    calculateShiftEnd,
+    calculateMinutesUntil,
     calculateRunningOvertime,
     formatDuration,
     getAutomaticLunchStart,
@@ -1185,6 +1187,25 @@ const todayRemainingMinutes = Math.max(
     480 - todayCoveredMinutes,
 )
 
+const requiredFromOpenSession = Math.max(
+    0,
+    480 - todayCreditedMinutes - todayCompTimeMinutes - todayCompletedWorkedMinutes,
+)
+const shiftEnd = openSessionToday
+    ? calculateShiftEnd(
+          new Date(openSessionToday.started_at),
+          requiredFromOpenSession,
+          todayLunchDeductions.get(openSessionToday) === 'recorded',
+          !todayCompletedSessions.some(
+              (session) => todayLunchDeductions.get(session) !== null,
+          ),
+      )
+    : null
+const shiftRemainingMinutes = shiftEnd ? calculateMinutesUntil(shiftEnd, now) : 0
+const plannedDepartureRemainingMinutes = workSession?.planned_departure_at
+    ? calculateMinutesUntil(new Date(workSession.planned_departure_at), now)
+    : null
+
 const todayFullyCovered =
     todayRemainingMinutes === 0
 
@@ -1547,9 +1568,30 @@ return (
                         <strong className="stat-value">{formatDuration(todayWorkedMinutes, false)}</strong>
                     </div>
                     <div className="stat-card">
-                        <span className="stat-label">Zbývá odpracovat</span>
-                        <strong className="stat-value">{formatDuration(todayRemainingMinutes, false)}</strong>
+                        <span className="stat-label">
+                            {shiftEnd ? 'Do konce směny' : 'Zbývá odpracovat'}
+                        </span>
+                        <strong className="stat-value">
+                            {formatDuration(shiftEnd ? shiftRemainingMinutes : todayRemainingMinutes, false)}
+                        </strong>
+                        <span className="stat-description">
+                            {shiftEnd
+                                ? `Do splnění denní povinnosti (${formatTime(shiftEnd.toISOString())}), včetně případného oběda.`
+                                : 'Čistý pracovní čas, bez přestávky na oběd.'}
+                        </span>
                     </div>
+                    {plannedDepartureRemainingMinutes !== null && workSession?.planned_departure_at && (
+                        <div className="stat-card">
+                            <span className="stat-label">Do plánovaného odchodu</span>
+                            <strong className="stat-value">
+                                {formatDuration(plannedDepartureRemainingMinutes, false)}
+                            </strong>
+                            <span className="stat-description">
+                                Automatický odchod v {formatTime(workSession.planned_departure_at)}.
+                                Nezávisí na splnění denní povinnosti.
+                            </span>
+                        </div>
+                    )}
                 </div>
             </section>
             <AttendanceCalendar

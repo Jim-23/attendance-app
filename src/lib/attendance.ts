@@ -260,6 +260,31 @@ export function calculateCurrentWorkedMinutes(
   )
 }
 
+export function calculateShiftEnd(
+  arrival: Date,
+  requiredWorkedMinutes: number,
+  hasLunch: boolean,
+  allowAutomaticLunch = true,
+): Date {
+  if (requiredWorkedMinutes <= 0) return arrival
+
+  const roundedWorkMinutes = Math.ceil(requiredWorkedMinutes / 15) * 15
+  const lunchMinutes =
+    hasLunch ||
+    (allowAutomaticLunch && roundedWorkMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES)
+      ? LUNCH_MINUTES
+      : 0
+
+  return new Date(
+    roundArrival(arrival).getTime() +
+      (roundedWorkMinutes + lunchMinutes) * 60_000,
+  )
+}
+
+export function calculateMinutesUntil(end: Date, now: Date): number {
+  return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / 60_000))
+}
+
 /**
  * Spočítá bilanci jednoho dne.
  *

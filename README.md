@@ -25,6 +25,13 @@ sessions every 30 seconds and on window focus. Normal rounding and lunch rules
 apply after completion. This requires the migration and Cron setup described in
 [Supabase setup](./supabase/README.md).
 
+During today's open session, **Do konce směny** shows the wall-clock time until
+the daily requirement is fulfilled, accounting for arrival/departure rounding,
+completed sessions, leave, and the single daily lunch deduction. Before arrival,
+**Zbývá odpracovat** explicitly shows net work time excluding lunch.
+**Do plánovaného odchodu** is a separate countdown to the selected automatic
+departure; it can be earlier or later than fulfilling the daily requirement.
+
 The calendar displays recorded sessions and leave, plus Czech public holidays
 (including Good Friday and Easter Monday). These holiday markers are
 informational only: they do not create leave records or change attendance

@@ -24,6 +24,39 @@ function loadModule(path) {
 const { getVacationUsedMinutes, leaveLabels } = loadModule(resolve('src/lib/leave.ts'))
 const { getUserStatistics, getInvitationStatus, isAdminUser } = loadModule(resolve('src/lib/admin.ts'))
 const { calculateDailyBalances, getDailyLunchDeductions, hasLunchOnDate } = loadModule(resolve('src/lib/attendance.ts'))
+const { calculateShiftEnd, calculateMinutesUntil, calculateWorkedMinutes } = loadModule(resolve('src/lib/attendance.ts'))
+
+test('shift countdown includes lunch and rounds to a departure that fulfils the work requirement', () => {
+  const arrival = new Date('2026-10-07T06:00:00Z')
+  const end = calculateShiftEnd(arrival, 480, false)
+  assert.equal(end.toISOString(), '2026-10-07T14:30:00.000Z')
+  assert.equal(calculateMinutesUntil(end, arrival), 510)
+  assert.equal(calculateMinutesUntil(end, new Date('2026-10-07T14:00:00Z')), 30)
+  assert.equal(calculateMinutesUntil(end, new Date('2026-10-07T14:30:01Z')), 0)
+  assert.equal(calculateShiftEnd(arrival, 480, true).getTime(), end.getTime())
+
+  // A lunch deducted in an earlier session must not extend this session again.
+  assert.equal(calculateShiftEnd(arrival, 480, false, false).toISOString(), '2026-10-07T14:00:00.000Z')
+  assert.equal(calculateShiftEnd(arrival, 240, false).toISOString(), '2026-10-07T10:00:00.000Z')
+  assert.equal(calculateShiftEnd(arrival, 300, false).toISOString(), '2026-10-07T11:00:00.000Z')
+  assert.equal(calculateShiftEnd(arrival, 301, false).toISOString(), '2026-10-07T11:45:00.000Z')
+  assert.equal(calculateShiftEnd(arrival, 240, true).toISOString(), '2026-10-07T10:30:00.000Z')
+  assert.equal(calculateShiftEnd(arrival, 0, true).getTime(), arrival.getTime())
+
+  const lateArrival = new Date('2026-10-07T06:07:00Z')
+  const lateEnd = calculateShiftEnd(lateArrival, 480, false)
+  assert.equal(lateEnd.toISOString(), '2026-10-07T14:45:00.000Z')
+  assert.equal(calculateWorkedMinutes(lateArrival, lateEnd, false), 480)
+  assert.ok(calculateWorkedMinutes(lateArrival, new Date(lateEnd.getTime() - 60_000), false) < 480)
+})
+
+test('planned departure countdown uses wall-clock time independently of the shift requirement', () => {
+  const now = new Date('2026-10-07T06:00:00Z')
+  const planned = new Date('2026-10-07T15:30:00Z')
+  assert.equal(calculateMinutesUntil(planned, now), 570)
+  assert.equal(calculateMinutesUntil(planned, new Date('2026-10-07T15:29:30Z')), 1)
+  assert.equal(calculateMinutesUntil(planned, new Date('2026-10-07T15:31:00Z')), 0)
+})
 
 test('company-wide leave shares vacation allowance and credits the day once', () => {
   const days = [
