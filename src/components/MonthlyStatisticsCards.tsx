@@ -75,17 +75,14 @@ function MonthlyStatisticsCards({ statistics }: { statistics: MonthlyStatistics 
       <details className="monthly-explanation">
         <summary>Jak se fond a hodiny počítají?</summary>
         <p>
-          Fond zahrnuje všechny všední dny včetně svátků, nikoli víkendy.
+          Fond zahrnuje všechny pracovní dny včetně svátků.
           Svátky se automaticky započítají jako placené hodiny bez oběda.
-          Volno fond nesnižuje, ale započítává se do jeho
-          splnění: celý den 8 h, půlden 4 h a náhradní volno podle délky, nejvýše do denní povinnosti.
-          Volno o víkendu a ve svátek se nezapočítá znovu.
+          Volno se započítává do splnění: celý den 8 h, půlden 4 h a náhradní volno podle délky, nejvýše do denní povinnosti.
         </p>
         <p>
-          Práce zahrnuje pouze ukončenou docházku po zaokrouhlení a odečtení oběda,
-          včetně práce o víkendu či svátku. Plány zahrnují otevřenou docházku s plánovaným
-          odchodem, budoucí volno a nadcházející svátky.
-          Přesčasový účet je samostatný, nikoli měsíční fond.
+          Práce zahrnuje pouze ukončenou docházku po zaokrouhlení a odečtení oběda.
+          Plány zahrnují docházku s plánovaným odchodem, budoucí volno a nadcházející svátky.
+          Přesčasový účet je samostatný.
         </p>
       </details>
     </div>
