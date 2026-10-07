@@ -254,6 +254,16 @@ button:disabled {
     color: var(--color-text);
 }
 
+.dashboard-menu-separator {
+    margin: 6px 4px;
+    border: 0;
+    border-top: 1px solid var(--color-border);
+}
+
+.dashboard-menu-logout {
+    color: var(--color-text-secondary);
+}
+
 .dashboard-menu-item:hover,
 .dashboard-menu-item[aria-current="page"] {
     background: var(--color-primary-light);
@@ -697,18 +707,99 @@ button:disabled {
    ========================================================= */
 
 .message {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
     margin-bottom: 24px;
     padding: 12px 14px;
 
     border: 1px solid var(--color-border);
+    border-left-width: 4px;
     border-radius: var(--radius-medium);
 
-    color: var(--color-text-secondary);
+    color: var(--color-text);
     background: var(--color-surface);
 
-    font-size: 13px;
+    font-size: 14px;
+    font-weight: 500;
 
     box-shadow: var(--shadow-small);
+}
+
+.message-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    color: #fff;
+    background: var(--color-text-secondary);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.message-block {
+    display: block;
+}
+
+.message-text {
+    flex: 1;
+}
+
+.message-close {
+    flex: 0 0 auto;
+    padding: 0 4px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 20px;
+    line-height: 1;
+    opacity: 0.6;
+}
+
+.message-close:hover {
+    opacity: 1;
+}
+
+.message-success {
+    border-color: #bbf7d0;
+    border-left-color: var(--color-success);
+}
+
+.message-success .message-icon {
+    background: var(--color-success);
+}
+
+.message-info {
+    border-left-color: var(--color-primary);
+}
+
+.message-info .message-icon {
+    background: var(--color-primary);
+}
+
+/* Errors stay visible while scrolling so they are not missed. */
+.message-error {
+    position: sticky;
+    top: 12px;
+    z-index: 5;
+
+    border-color: #fca5a5;
+    border-left-color: var(--color-danger);
+
+    color: #991b1b;
+    background: var(--color-danger-light);
+
+    font-weight: 600;
+
+    box-shadow: var(--shadow-large);
+}
+
+.message-error .message-icon {
+    background: var(--color-danger);
 }
 
 
@@ -1158,7 +1249,7 @@ button:disabled {
     width: 100%;
 }
 
-.time-picker-field span {
+.time-picker-field > label {
     display: block;
     margin-bottom: 6px;
     font-size: 0.875rem;
@@ -1173,4 +1264,40 @@ button:disabled {
 
 .time-picker-actions .button {
     width: 100%;
+}
+
+.time-input {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.time-input select {
+    width: auto;
+    min-width: 72px;
+    min-height: 44px;
+    padding: 0 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.time-input select:focus {
+    border-color: var(--color-border-focus);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+}
+
+.date-time-input {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.form-field .date-time-input input[type="date"] {
+    width: auto;
+    flex: 1 1 150px;
 }

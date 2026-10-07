@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatInTimeZone } from 'date-fns-tz'
 import AttendanceCalendar from './AttendanceCalendar'
+import { DateTimeInput, TimeInput } from './TimeInput'
 import { getVacationUsedMinutes, leaveLabels, usesVacationAllowance } from '../lib/leave'
 
 import {
@@ -25,6 +26,13 @@ import {
     roundArrival,
     roundDeparture,
 } from '../lib/attendance'
+
+type MessageTone = 'success' | 'info' | 'error'
+
+interface DashboardMessage {
+    text: string
+    tone: MessageTone
+}
 
 interface WorkSession {
     id: number
@@ -76,7 +84,13 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
     const [workSession, setWorkSession] = useState<WorkSession | null>(null)
     const [loading, setLoading] = useState(true)
     const [actionLoading, setActionLoading] = useState(false)
-    const [message, setMessage] = useState<string | null>(null)
+    const [message, setMessageState] = useState<DashboardMessage | null>(null)
+    const setMessage = useCallback(
+        (text: string | null, tone: MessageTone = 'error') => {
+            setMessageState(text === null ? null : { text, tone })
+        },
+        [],
+    )
     const [history, setHistory] = useState<HistorySession[]>([])
     const [monthlyWorkedMinutes, setMonthlyWorkedMinutes] = useState(0)
     const [monthlyOvertimeMinutes, setMonthlyOvertimeMinutes] = useState(0)
@@ -133,7 +147,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
 
         setWorkDays(allWorkDays)
         setWorkDaysLoading(false)
-    }, [userId])
+    }, [setMessage, userId])
 
     const loadOpenSession = useCallback(async () => {
         const { data, error } = await supabase
@@ -155,7 +169,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
         setWorkSession(data)
         setLoading(false)
         return data
-    }, [userId])
+    }, [setMessage, userId])
 
     const loadHistory = useCallback(async () => {
         const allSessions: HistorySession[] = []
@@ -276,7 +290,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
         setMonthlyOvertimeMinutes(
             calculateRunningOvertime(dailyBalances),
         )
-    }, [userId])
+    }, [setMessage, userId])
 
     useEffect(() => {
         void Promise.resolve().then(() => {
@@ -482,6 +496,7 @@ async function handleAddDayRecord() {
             dates.length === 1
                 ? 'Záznam uložen.'
                 : `Uloženo ${dates.length} pracovních dnů.`,
+            'success',
         )
 
         setDayDateFrom('')
@@ -520,7 +535,7 @@ async function handleDeleteDayRecord(id: number) {
         console.error('Failed to delete work day:', error)
         setMessage('Nepodařilo se smazat záznam.')
     } else {
-        setMessage('Záznam byl smazán.')
+        setMessage('Záznam byl smazán.', 'success')
         await loadWorkDays()
         await loadHistory()
     }
@@ -559,7 +574,7 @@ async function handleDeleteDayRecord(id: number) {
 
   async function handleArrival() {
     if (todayFullyCovered) {
-        setMessage('Dnes nemáš žádnou pracovní povinnost.')
+        setMessage('Dnes nemáš žádnou pracovní povinnost.', 'info')
         return
     }
 
@@ -606,7 +621,7 @@ async function handleDeleteDayRecord(id: number) {
         const openSession = await loadOpenSession()
         closeTimePicker()
         if (openSession) {
-          setMessage('Načtena otevřená docházka z jiného zařízení.')
+          setMessage('Načtena otevřená docházka z jiného zařízení.', 'info')
         } else {
           setMessage(
             'Příchod již existuje, ale nepodařilo se načíst otevřenou docházku.',
@@ -618,7 +633,7 @@ async function handleDeleteDayRecord(id: number) {
     } else {
       setWorkSession(data)
       closeTimePicker()
-      setMessage('Příchod zaznamenán.')
+      setMessage('Příchod zaznamenán.', 'success')
     }
 
     setActionLoading(false)
@@ -656,7 +671,7 @@ async function handleDeleteDayRecord(id: number) {
       )
     } else {
       setWorkSession(data)
-      setMessage('Oběd zaznamenán na 30 minut.')
+      setMessage('Oběd zaznamenán na 30 minut.', 'success')
     }
 
     setActionLoading(false)
@@ -704,7 +719,7 @@ async function handleDeleteDayRecord(id: number) {
     } else {
         setWorkSession(null)
         closeTimePicker()
-        setMessage('Odchod zaznamenán.')
+        setMessage('Odchod zaznamenán.', 'success')
         await loadHistory()
     }
 
@@ -722,16 +737,16 @@ async function handleDeleteDayRecord(id: number) {
           void (action === 'arrival' ? handleArrival() : handleDeparture())
         }}
       >
-        <label className="form-field time-picker-field">
-          <span>{label}</span>
-          <input
-            type="time"
+        <div className="form-field time-picker-field">
+          <label htmlFor={`${action}-time`}>{label}</label>
+          <TimeInput
+            id={`${action}-time`}
             value={pendingTime}
-            onChange={(event) => setPendingTime(event.target.value)}
-            required
+            onChange={setPendingTime}
+            disabled={actionLoading}
             autoFocus
           />
-        </label>
+        </div>
         <div className="time-picker-actions">
           <button
             type="submit"
@@ -810,7 +825,7 @@ async function handleDeleteDayRecord(id: number) {
       setMessage('Nepodařilo se upravit docházku.')
     } else {
       setEditingSessionId(null)
-      setMessage('Příchod a odchod byly upraveny.')
+      setMessage('Příchod a odchod byly upraveny.', 'success')
       await loadHistory()
     }
 
@@ -1047,20 +1062,35 @@ return (
                                     Administrace
                                 </button>
                             )}
+                            <hr className="dashboard-menu-separator" />
+                            <button className="dashboard-menu-item dashboard-menu-logout" onClick={onLogout}>
+                                Odhlásit
+                            </button>
                         </nav>
                     )}
                 </div>
-                <button className="button button-secondary" onClick={onLogout}>
-                    Odhlásit
-                </button>
             </div>
         </header>
 
         <main className="dashboard-content">
           {/* ==================== MESSAGE ==================== */}
             {message && (
-                <div className="message">
-                    {message}
+                <div
+                    className={`message message-${message.tone}`}
+                    role={message.tone === 'error' ? 'alert' : 'status'}
+                >
+                    <span className="message-icon" aria-hidden="true">
+                        {message.tone === 'error' ? '!' : message.tone === 'success' ? '✓' : 'i'}
+                    </span>
+                    <span className="message-text">{message.text}</span>
+                    <button
+                        type="button"
+                        className="message-close"
+                        aria-label="Zavřít zprávu"
+                        onClick={() => setMessage(null)}
+                    >
+                        ×
+                    </button>
                 </div>
             )}
 
@@ -1500,16 +1530,11 @@ return (
                                                                 >
                                                                     Příchod
                                                                 </label>
-                                                                <input
+                                                                <DateTimeInput
                                                                     id={`arrival-${session.id}`}
-                                                                    type="datetime-local"
                                                                     value={editedArrival}
-                                                                    onChange={(event) =>
-                                                                        setEditedArrival(
-                                                                            event.target.value,
-                                                                        )
-                                                                    }
-                                                                    required
+                                                                    onChange={setEditedArrival}
+                                                                    disabled={actionLoading}
                                                                 />
                                                             </div>
                                                             <div className="form-field">
@@ -1518,16 +1543,11 @@ return (
                                                                 >
                                                                     Odchod
                                                                 </label>
-                                                                <input
+                                                                <DateTimeInput
                                                                     id={`departure-${session.id}`}
-                                                                    type="datetime-local"
                                                                     value={editedDeparture}
-                                                                    onChange={(event) =>
-                                                                        setEditedDeparture(
-                                                                            event.target.value,
-                                                                        )
-                                                                    }
-                                                                    required
+                                                                    onChange={setEditedDeparture}
+                                                                    disabled={actionLoading}
                                                                 />
                                                             </div>
                                                             <div className="session-edit-actions">

@@ -4,10 +4,11 @@
 
 The dashboard shows today's date and attendance totals in `Europe/Prague`,
 followed by a read-only monthly calendar. Use the header menu to switch to
-History (including session corrections), Leave, or Statistics.
+History (including session corrections), Leave, or Statistics; **Odhlásit** is
+at the bottom of the menu. Times are always entered in 24-hour format.
 
-Clicking **Příchod** or **Odchod** opens a time field (today's date) prefilled
-with the current time, so the real arrival or departure time can be recorded
+Clicking **Příchod** or **Odchod** opens a 24-hour time picker (today's date)
+prefilled with the current time, so the real arrival or departure time can be recorded
 right away. Changing the date of a completed session is done in History. Future times are rejected, an arrival cannot fall inside an
 already recorded session, and a departure must come after the arrival and any
 recorded lunch start.

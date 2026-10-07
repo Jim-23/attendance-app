@@ -200,8 +200,8 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
         <button className="button button-secondary" onClick={onBack} disabled={busy}>Zpět na docházku</button>
       </header>
       <main className="dashboard-content">
-        {error && <p className="login-error" role="alert">{error}</p>}
-        {message && <p className="message" role="status">{message}</p>}
+        {error && <p className="message message-error" role="alert">{error}</p>}
+        {message && <p className="message message-success" role="status">{message}</p>}
         {loading ? <p>Načítám administraci...</p> : (
           <>
             <section className="dashboard-section">
@@ -288,7 +288,7 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
                 <button className="button button-primary" disabled={busy}>Vytvořit jednorázový klíč</button>
               </form>
               {newKey && (
-                <div className="message" role="status">
+                <div className="message message-info message-block" role="status">
                   <p>Klíč zkopíruj a předej uživateli bezpečně. Zobrazí se pouze nyní.</p>
                   <div className="form-field"><label htmlFor="new-invitation">Registrační klíč</label>
                     <input id="new-invitation" value={newKey} readOnly autoComplete="off" /></div>
