@@ -1576,7 +1576,7 @@ return (
                         </strong>
                         <span className="stat-description">
                             {shiftEnd
-                                ? `Do splnění denní povinnosti (${formatTime(shiftEnd.toISOString())}), včetně případného oběda.`
+                                ? `Do splnění denní povinnosti (${formatTime(shiftEnd.toISOString())}), včetně oběda.`
                                 : 'Čistý pracovní čas, bez přestávky na oběd.'}
                         </span>
                     </div>
