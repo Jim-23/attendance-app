@@ -2,58 +2,86 @@ import { formatDuration } from '../lib/attendance'
 import type { MonthlyStatistics } from '../lib/monthly'
 
 function MonthlyStatisticsCards({ statistics }: { statistics: MonthlyStatistics }) {
-  const cards = [
-    {
-      label: 'Měsíční fond',
-      minutes: statistics.fundMinutes,
-      description: `Pracovní dny: ${statistics.workingDays} · svátky ve všední den: ${statistics.holidayDays}. Bez oběda.`,
-    },
-    {
-      label: 'Dokončená práce',
-      minutes: statistics.workedMinutes,
-      description: 'Čistý čas pouze z ukončené docházky, po zaokrouhlení a odečtení oběda.',
-    },
-    {
-      label: 'Započtené volno',
-      minutes: statistics.creditedLeaveMinutes,
-      description: 'Volno do dnešního dne včetně. Celý den 8 h, půlden 4 h, náhradní volno dle délky.',
-    },
-    {
-      label: 'Splněno z fondu',
-      minutes: statistics.fulfilledMinutes,
-      description: 'Dokončená práce + započtené volno.',
-    },
-    {
-      label: 'Zbývá splnit',
-      minutes: statistics.remainingMinutes,
-      description: 'Zbytek měsíčního fondu. Budoucí plány ještě nejsou splněné.',
-    },
-    {
-      label: 'Plánovaná práce',
-      minutes: statistics.plannedWorkMinutes,
-      description: 'Očekávaný čistý čas otevřené docházky s plánovaným odchodem.',
-    },
-    {
-      label: 'Plánované volno',
-      minutes: statistics.plannedLeaveMinutes,
-      description: 'Zadané volno na budoucí pracovní dny tohoto měsíce.',
-    },
-    {
-      label: 'Celkem po splnění plánů',
-      minutes: statistics.projectedMinutes,
-      description: `Práce a volno včetně plánů. Poté zbývá ${formatDuration(statistics.projectedRemainingMinutes, false)}.`,
-    },
-  ]
+  const progress = statistics.fundMinutes > 0
+    ? Math.min(100, statistics.fulfilledMinutes / statistics.fundMinutes * 100)
+    : 100
+  const hasPlans = statistics.plannedWorkMinutes !== 0 || statistics.plannedLeaveMinutes > 0
+  const excessMinutes = Math.max(0, statistics.balanceMinutes)
 
   return (
-    <div className="stats-grid">
-      {cards.map((card) => (
-        <div className="stat-card" key={card.label}>
-          <span className="stat-label">{card.label}</span>
-          <strong className="stat-value">{formatDuration(card.minutes, false)}</strong>
-          <span className="stat-description">{card.description}</span>
+    <div className="monthly-overview">
+      <section className="monthly-progress-card" aria-label="Plnění měsíčního fondu">
+        <div className="monthly-progress-heading">
+          <div>
+            <span className="stat-label">Splněno z měsíčního fondu</span>
+            <p className="monthly-progress-total">
+              <strong>{formatDuration(statistics.fulfilledMinutes, false)}</strong>
+              <span>z {formatDuration(statistics.fundMinutes, false)}</span>
+            </p>
+          </div>
+          <div className="monthly-remaining">
+            <span className="stat-label">
+              {excessMinutes > 0 ? 'Nad měsíční fond' : statistics.remainingMinutes === 0 ? 'Fond splněn' : 'Zbývá splnit'}
+            </span>
+            <strong className={statistics.remainingMinutes === 0 ? 'positive' : undefined}>
+              {formatDuration(excessMinutes || statistics.remainingMinutes, false)}
+            </strong>
+          </div>
         </div>
-      ))}
+        <progress
+          className="monthly-progress-bar"
+          max={100}
+          value={progress}
+          aria-label="Splnění měsíčního fondu"
+          aria-valuetext={`${formatDuration(statistics.fulfilledMinutes, false)} z ${formatDuration(statistics.fundMinutes, false)}`}
+        />
+        <dl className="monthly-breakdown">
+          <div><dt>Dokončená práce</dt><dd>{formatDuration(statistics.workedMinutes, false)}</dd></div>
+          <div><dt>Započtené volno</dt><dd>{formatDuration(statistics.creditedLeaveMinutes, false)}</dd></div>
+        </dl>
+        <p className="monthly-note">
+          Práce a volno do dneška · čisté hodiny bez oběda. Pracovní dny: {statistics.workingDays};
+          svátky ve všední den: {statistics.holidayDays}.
+        </p>
+      </section>
+
+      <section className="monthly-plans" aria-label="Výhled s plánovanými hodinami">
+        <div className="monthly-plans-heading">
+          <h3>Výhled s plány</h3>
+          <span>Ještě není splněno</span>
+        </div>
+        {hasPlans ? (
+          <>
+            <dl className="monthly-breakdown">
+              <div><dt>Plánovaná práce</dt><dd>{formatDuration(statistics.plannedWorkMinutes, false)}</dd></div>
+              <div><dt>Plánované volno</dt><dd>{formatDuration(statistics.plannedLeaveMinutes, false)}</dd></div>
+            </dl>
+            <p className="monthly-projection">
+              Po splnění plánů: <strong>{formatDuration(statistics.projectedMinutes, false)}</strong>
+              {' · '}
+              {statistics.projectedRemainingMinutes > 0
+                ? `zbývá ${formatDuration(statistics.projectedRemainingMinutes, false)}`
+                : 'měsíční fond bude splněn'}
+            </p>
+          </>
+        ) : (
+          <p className="monthly-note">Bez plánovaného odchodu a budoucího volna v tomto měsíci.</p>
+        )}
+      </section>
+
+      <details className="monthly-explanation">
+        <summary>Jak se fond a hodiny počítají?</summary>
+        <p>
+          Fond nezahrnuje víkendy a české svátky. Volno fond nesnižuje, ale započítává se do jeho
+          splnění: celý den 8 h, půlden 4 h a náhradní volno podle délky, nejvýše do denní povinnosti.
+          Volno o víkendu a ve svátek se nezapočítá znovu.
+        </p>
+        <p>
+          Práce zahrnuje pouze ukončenou docházku po zaokrouhlení a odečtení oběda,
+          včetně práce o víkendu či svátku. Plány zahrnují otevřenou docházku s plánovaným
+          odchodem a budoucí volno. Přesčasový účet je samostatný, nikoli měsíční fond.
+        </p>
+      </details>
     </div>
   )
 }

@@ -61,6 +61,12 @@ session durations show the calculated worked time.
 
 **Statistiky** has a month selector and shows:
 
+The overview groups these figures into a single fulfilment/progress summary
+(completed work + credited leave), followed by a visually separate **Výhled
+s plány** panel. Calculation details are expandable rather than displayed
+on every metric. Progress is capped visually at 100%; actual totals and any
+hours above the monthly Fond remain visible.
+
 - **Měsíční fond:** 8 net hours per weekday, excluding Czech public holidays
   (including Easter) and additional `holiday` records. A holiday on a weekend
   does not remove another workday. The same holiday is never excluded twice.

@@ -1636,11 +1636,6 @@ return (
                         }}
                     />
                 </div>
-                <p className="calendar-note">
-                    Fond je 8 hodin za každý pracovní den mimo víkendy a české svátky.
-                    Volno se započítává do splnění fondu, nesnižuje jeho výši.
-                    Práce o víkendu nebo ve svátek se započítá jako dokončená práce.
-                </p>
                 <MonthlyStatisticsCards statistics={monthlyStatistics} />
                 <div className="stats-grid">
                     <div className="stat-card">
