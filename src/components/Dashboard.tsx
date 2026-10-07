@@ -11,6 +11,7 @@ import CalendarDayPanel from './CalendarDayPanel'
 import { getCzechHolidays } from '../lib/calendar'
 import { getMonthlyStatistics } from '../lib/monthly'
 import MonthlyStatisticsCards from './MonthlyStatisticsCards'
+import MonthInput from './MonthInput'
 
 import {
     formatTime,
@@ -1625,15 +1626,10 @@ return (
                 </div>
                 <div className="form-field">
                     <label htmlFor="statistics-month">Měsíc</label>
-                    <input
+                    <MonthInput
                         id="statistics-month"
-                        type="month"
                         value={statisticsMonth}
-                        onChange={(event) => {
-                            if (/^\d{4}-\d{2}$/.test(event.target.value)) {
-                                setStatisticsMonth(event.target.value)
-                            }
-                        }}
+                        onChange={setStatisticsMonth}
                     />
                 </div>
                 <MonthlyStatisticsCards statistics={monthlyStatistics} />

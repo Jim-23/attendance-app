@@ -5,7 +5,8 @@ function MonthlyStatisticsCards({ statistics }: { statistics: MonthlyStatistics 
   const progress = statistics.fundMinutes > 0
     ? Math.min(100, statistics.fulfilledMinutes / statistics.fundMinutes * 100)
     : 100
-  const hasPlans = statistics.plannedWorkMinutes !== 0 || statistics.plannedLeaveMinutes > 0
+  const hasPlans = statistics.plannedWorkMinutes !== 0 || statistics.plannedLeaveMinutes > 0 ||
+    statistics.plannedHolidayMinutes > 0
   const excessMinutes = Math.max(0, statistics.balanceMinutes)
 
   return (
@@ -38,10 +39,11 @@ function MonthlyStatisticsCards({ statistics }: { statistics: MonthlyStatistics 
         <dl className="monthly-breakdown">
           <div><dt>Dokončená práce</dt><dd>{formatDuration(statistics.workedMinutes, false)}</dd></div>
           <div><dt>Započtené volno</dt><dd>{formatDuration(statistics.creditedLeaveMinutes, false)}</dd></div>
+          <div><dt>Placené svátky</dt><dd>{formatDuration(statistics.creditedHolidayMinutes, false)}</dd></div>
         </dl>
         <p className="monthly-note">
-          Práce a volno do dneška · čisté hodiny bez oběda. Pracovní dny: {statistics.workingDays};
-          svátky ve všední den: {statistics.holidayDays}.
+          Práce, volno a placené svátky do dneška · čisté hodiny bez oběda.
+          Všední dny: {statistics.workingDays}, z toho svátky: {statistics.holidayDays}.
         </p>
       </section>
 
@@ -55,6 +57,7 @@ function MonthlyStatisticsCards({ statistics }: { statistics: MonthlyStatistics 
             <dl className="monthly-breakdown">
               <div><dt>Plánovaná práce</dt><dd>{formatDuration(statistics.plannedWorkMinutes, false)}</dd></div>
               <div><dt>Plánované volno</dt><dd>{formatDuration(statistics.plannedLeaveMinutes, false)}</dd></div>
+              <div><dt>Nadcházející svátky</dt><dd>{formatDuration(statistics.plannedHolidayMinutes, false)}</dd></div>
             </dl>
             <p className="monthly-projection">
               Po splnění plánů: <strong>{formatDuration(statistics.projectedMinutes, false)}</strong>
@@ -65,21 +68,24 @@ function MonthlyStatisticsCards({ statistics }: { statistics: MonthlyStatistics 
             </p>
           </>
         ) : (
-          <p className="monthly-note">Bez plánovaného odchodu a budoucího volna v tomto měsíci.</p>
+          <p className="monthly-note">Bez plánovaného odchodu, budoucího volna a svátků v tomto měsíci.</p>
         )}
       </section>
 
       <details className="monthly-explanation">
         <summary>Jak se fond a hodiny počítají?</summary>
         <p>
-          Fond nezahrnuje víkendy a české svátky. Volno fond nesnižuje, ale započítává se do jeho
+          Fond zahrnuje všechny všední dny včetně svátků, nikoli víkendy.
+          Svátky se automaticky započítají jako placené hodiny bez oběda.
+          Volno fond nesnižuje, ale započítává se do jeho
           splnění: celý den 8 h, půlden 4 h a náhradní volno podle délky, nejvýše do denní povinnosti.
           Volno o víkendu a ve svátek se nezapočítá znovu.
         </p>
         <p>
           Práce zahrnuje pouze ukončenou docházku po zaokrouhlení a odečtení oběda,
           včetně práce o víkendu či svátku. Plány zahrnují otevřenou docházku s plánovaným
-          odchodem a budoucí volno. Přesčasový účet je samostatný, nikoli měsíční fond.
+          odchodem, budoucí volno a nadcházející svátky.
+          Přesčasový účet je samostatný, nikoli měsíční fond.
         </p>
       </details>
     </div>

@@ -34,7 +34,7 @@ departure; it can be earlier or later than fulfilling the daily requirement.
 
 The calendar displays recorded sessions and leave, plus Czech public holidays
 (including Good Friday and Easter Monday). These holiday markers do not create
-leave records, but automatically exclude the day from the monthly Fond.
+leave records, but automatically credit paid weekday holiday hours toward the monthly Fond.
 Navigate between months or use **Dnes** to return to the current month.
 On small screens the calendar scrolls horizontally.
 
@@ -61,15 +61,21 @@ session durations show the calculated worked time.
 
 **Statistiky** has a month selector and shows:
 
+Month names are explicitly Czech (leden through prosinec), independent of the
+browser language, in both user and admin statistics. Arrow buttons change the year.
+
 The overview groups these figures into a single fulfilment/progress summary
-(completed work + credited leave), followed by a visually separate **Výhled
+(completed work + credited leave + paid holidays), followed by a visually separate **Výhled
 s plány** panel. Calculation details are expandable rather than displayed
 on every metric. Progress is capped visually at 100%; actual totals and any
 hours above the monthly Fond remain visible.
 
-- **Měsíční fond:** 8 net hours per weekday, excluding Czech public holidays
-  (including Easter) and additional `holiday` records. A holiday on a weekend
-  does not remove another workday. The same holiday is never excluded twice.
+- **Měsíční fond:** 8 net hours per weekday, including public holidays.
+  **Placené svátky** automatically credits Czech weekday public holidays
+  (including Easter) and additional `holiday` records through today, without
+  lunch deductions. Future holidays appear as **Nadcházející svátky** in the
+  projection. Weekend holidays add no hours, and a holiday is never credited
+  twice even if there is also a manual holiday or vacation record on that date.
 - **Dokončená práce:** only closed sessions, with the normal rounding and daily
   lunch deduction. Sessions are assigned to their Prague arrival date, as in
   History. Weekend/holiday work still counts as work.
@@ -77,10 +83,10 @@ hours above the monthly Fond remain visible.
   compensatory leave at their recorded durations on working days through today.
   Leave on a weekend or holiday cannot fulfil Fond a second time. Leave credits
   are capped at the daily requirement for each date.
-- **Splněno z fondu** and **Zbývá splnit:** completed work plus credited leave
+- **Splněno z fondu** and **Zbývá splnit:** completed work plus credited leave and paid holidays
   versus the full Fond. Vacation does not reduce the baseline Fond.
 - **Plánovaná práce**, **Plánované volno**, and **Celkem po splnění plánů:**
-  projections using open sessions with planned departures and future leave,
+  projections using open sessions with planned departures, future leave, and upcoming holidays,
   kept separate from already fulfilled hours. An unplanned open session is
   not counted as finished or projected work.
 

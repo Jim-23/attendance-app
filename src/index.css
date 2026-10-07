@@ -693,6 +693,24 @@ button:disabled {
     margin: 20px 0;
 }
 
+.month-input {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.month-input select {
+    flex: 1;
+    min-width: 140px;
+}
+
+.month-input-year {
+    min-width: 4ch;
+    text-align: center;
+    font-weight: 600;
+}
+
 .monthly-progress-card,
 .monthly-plans {
     padding: 20px;

@@ -24,14 +24,17 @@ export function getMonthlyStatistics(
   const today = formatInTimeZone(now, APP_TIMEZONE, 'yyyy-MM-dd')
   const holidays = getCzechHolidays(Number(month.slice(0, 4)))
   const monthDays = getMonthDays(month).filter((day) => day.inMonth)
-  const weekdayHolidays = monthDays.filter((day) => !day.weekend && holidays.has(day.date))
   const addedHolidays = new Set(
     leave.filter((day) => day.type === 'holiday').map((day) => day.date),
   )
   const workingDays = monthDays.filter(
-    (day) => !day.weekend && !holidays.has(day.date) && !addedHolidays.has(day.date),
+    (day) => !day.weekend,
   )
   const workingDates = new Set(workingDays.map((day) => day.date))
+  const holidayDates = new Set(
+    workingDays.filter((day) => holidays.has(day.date) || addedHolidays.has(day.date))
+      .map((day) => day.date),
+  )
   const monthlySessions = sessions.filter((session) =>
     formatInTimeZone(new Date(session.started_at), APP_TIMEZONE, 'yyyy-MM-dd').startsWith(month),
   )
@@ -60,7 +63,7 @@ export function getMonthlyStatistics(
 
   const leaveByDate = new Map<string, number>()
   for (const day of leave) {
-    if (day.type === 'holiday' || !workingDates.has(day.date)) continue
+    if (day.type === 'holiday' || !workingDates.has(day.date) || holidayDates.has(day.date)) continue
     leaveByDate.set(
       day.date,
       Math.min(dailyMinutes, (leaveByDate.get(day.date) ?? 0) + day.duration_minutes),
@@ -72,19 +75,26 @@ export function getMonthlyStatistics(
     if (date <= today) creditedLeaveMinutes += minutes
     else plannedLeaveMinutes += minutes
   }
+  let creditedHolidayMinutes = 0
+  let plannedHolidayMinutes = 0
+  for (const date of holidayDates) {
+    if (date <= today) creditedHolidayMinutes += dailyMinutes
+    else plannedHolidayMinutes += dailyMinutes
+  }
   const fundMinutes = workingDays.length * dailyMinutes
-  const fulfilledMinutes = workedMinutes + creditedLeaveMinutes
-  const projectedMinutes = projectedWorkedMinutes + creditedLeaveMinutes + plannedLeaveMinutes
+  const fulfilledMinutes = workedMinutes + creditedLeaveMinutes + creditedHolidayMinutes
+  const projectedMinutes = projectedWorkedMinutes + creditedLeaveMinutes + plannedLeaveMinutes +
+    creditedHolidayMinutes + plannedHolidayMinutes
   return {
     workingDays: workingDays.length,
-    holidayDays: weekdayHolidays.length + monthDays.filter(
-      (day) => !day.weekend && !holidays.has(day.date) && addedHolidays.has(day.date),
-    ).length,
+    holidayDays: holidayDates.size,
     fundMinutes,
     workedMinutes,
     creditedLeaveMinutes,
+    creditedHolidayMinutes,
     plannedWorkMinutes: projectedWorkedMinutes - workedMinutes,
     plannedLeaveMinutes,
+    plannedHolidayMinutes,
     fulfilledMinutes,
     projectedMinutes,
     remainingMinutes: Math.max(0, fundMinutes - fulfilledMinutes),

@@ -27,19 +27,31 @@ const { calculateDailyBalances, getDailyLunchDeductions, hasLunchOnDate } = load
 const { calculateShiftEnd, calculateMinutesUntil, calculateWorkedMinutes } = loadModule(resolve('src/lib/attendance.ts'))
 const { getMonthlyStatistics } = loadModule(resolve('src/lib/monthly.ts'))
 
-test('monthly Fond counts every working day, including missing attendance, and excludes Czech holidays', () => {
+test('monthly Fond includes weekday holidays and credits them as paid hours', () => {
   const now = new Date('2026-10-07T07:00:00Z')
   const stats = getMonthlyStatistics([], [], '2026-10', now)
-  assert.equal(stats.workingDays, 21)
+  assert.equal(stats.workingDays, 22)
   assert.equal(stats.holidayDays, 1)
-  assert.equal(stats.fundMinutes, 168 * 60)
-  assert.equal(stats.remainingMinutes, 168 * 60)
-  assert.equal(getMonthlyStatistics([], [], '2026-04', now).fundMinutes, 160 * 60)
+  assert.equal(stats.fundMinutes, 176 * 60)
+  assert.equal(stats.remainingMinutes, 176 * 60)
+  assert.equal(stats.creditedHolidayMinutes, 0)
+  assert.equal(stats.plannedHolidayMinutes, 8 * 60)
+  assert.equal(stats.projectedRemainingMinutes, 168 * 60)
+  const april = getMonthlyStatistics([], [], '2026-04', now)
+  assert.equal(april.fundMinutes, 176 * 60)
+  assert.equal(april.creditedHolidayMinutes, 16 * 60)
+  assert.equal(april.remainingMinutes, 160 * 60)
   // July 5 and December 26 are on weekends in 2026.
-  assert.equal(getMonthlyStatistics([], [], '2026-07', now).fundMinutes, 176 * 60)
-  assert.equal(getMonthlyStatistics([], [], '2026-12', now).fundMinutes, 168 * 60)
+  const july = getMonthlyStatistics([], [], '2026-07', now)
+  assert.equal(july.fundMinutes, 184 * 60)
+  assert.equal(july.creditedHolidayMinutes, 8 * 60)
+  const december = getMonthlyStatistics([], [], '2026-12', now)
+  assert.equal(december.fundMinutes, 184 * 60)
+  assert.equal(december.plannedHolidayMinutes, 16 * 60)
   assert.equal(getMonthlyStatistics([], [], '2024-02', now).fundMinutes, 168 * 60)
-  assert.equal(getMonthlyStatistics([], [], '2026-10', now, 240).fundMinutes, 84 * 60)
+  const halfTime = getMonthlyStatistics([], [], '2026-10', now, 240)
+  assert.equal(halfTime.fundMinutes, 88 * 60)
+  assert.equal(halfTime.plannedHolidayMinutes, 240)
 })
 
 test('leave fulfils monthly Fond without lunch, while future leave remains planned', () => {
@@ -55,33 +67,37 @@ test('leave fulfils monthly Fond without lunch, while future leave remains plann
     { date: '2026-11-02', type: 'vacation', duration_minutes: 480 },
   ]
   const stats = getMonthlyStatistics([], days, '2026-10', now)
-  assert.equal(stats.fundMinutes, 10080)
+  assert.equal(stats.fundMinutes, 10560)
   assert.equal(stats.creditedLeaveMinutes, 1320)
   assert.equal(stats.fulfilledMinutes, 1320)
   assert.equal(stats.plannedLeaveMinutes, 480)
-  assert.equal(stats.projectedMinutes, 1800)
-  assert.equal(stats.remainingMinutes, 8760)
+  assert.equal(stats.plannedHolidayMinutes, 480)
+  assert.equal(stats.projectedMinutes, 2280)
+  assert.equal(stats.remainingMinutes, 9240)
   assert.equal(stats.projectedRemainingMinutes, 8280)
   const afterDate = getMonthlyStatistics([], days, '2026-10', new Date('2026-10-20T06:00:00Z'))
   assert.equal(afterDate.creditedLeaveMinutes, 1800)
   assert.equal(afterDate.plannedLeaveMinutes, 0)
+  assert.equal(afterDate.plannedHolidayMinutes, 480)
   const duplicate = getMonthlyStatistics([], [...days, days[1]], '2026-10', now)
   assert.equal(duplicate.creditedLeaveMinutes, stats.creditedLeaveMinutes)
 })
 
-test('adding and removing a holiday or leave recalculates Fond and fulfilment without double credits', () => {
+test('adding and removing a holiday or leave recalculates fulfilment without double credits or changing Fond', () => {
   const now = new Date('2026-10-31T12:00:00Z')
   const vacation = { date: '2026-10-06', type: 'vacation', duration_minutes: 480 }
   const extraHoliday = { date: '2026-10-06', type: 'holiday', duration_minutes: 480 }
   const nationalHoliday = { date: '2026-10-28', type: 'holiday', duration_minutes: 480 }
   const withVacation = getMonthlyStatistics([], [vacation], '2026-10', now)
-  assert.equal(withVacation.fundMinutes, 10080)
-  assert.equal(withVacation.fulfilledMinutes, 480)
-  const withHoliday = getMonthlyStatistics([], [vacation, extraHoliday, nationalHoliday], '2026-10', now)
-  assert.equal(withHoliday.fundMinutes, 9600)
-  assert.equal(withHoliday.fulfilledMinutes, 0)
+  assert.equal(withVacation.fundMinutes, 10560)
+  assert.equal(withVacation.fulfilledMinutes, 960)
+  const withHoliday = getMonthlyStatistics([], [vacation, extraHoliday, extraHoliday, nationalHoliday], '2026-10', now)
+  assert.equal(withHoliday.fundMinutes, 10560)
+  assert.equal(withHoliday.fulfilledMinutes, 960)
+  assert.equal(withHoliday.creditedLeaveMinutes, 0)
+  assert.equal(withHoliday.creditedHolidayMinutes, 960)
   assert.equal(withHoliday.holidayDays, 2)
-  assert.equal(getMonthlyStatistics([], [], '2026-10', now).fulfilledMinutes, 0)
+  assert.equal(getMonthlyStatistics([], [], '2026-10', now).fulfilledMinutes, 480)
 })
 
 test('monthly work and projections use rounding and one daily lunch, and plans never count as completed', () => {
@@ -98,21 +114,37 @@ test('monthly work and projections use rounding and one daily lunch, and plans n
   assert.equal(stats.workedMinutes, 480)
   assert.equal(stats.plannedWorkMinutes, 540)
   assert.equal(stats.fulfilledMinutes, 480)
-  assert.equal(stats.projectedMinutes, 1020)
+  assert.equal(stats.projectedMinutes, 1500)
   const finished = getMonthlyStatistics(
     [completed, { ...open, ended_at: open.planned_departure_at, planned_departure_at: null }],
     [], '2026-10', new Date('2026-10-07T16:00:00Z'),
   )
   assert.equal(finished.workedMinutes, 1020)
   assert.equal(finished.plannedWorkMinutes, 0)
-  assert.equal(getMonthlyStatistics([completed, { ...open, planned_departure_at: null }], [], '2026-10', now).projectedMinutes, 480)
+  assert.equal(getMonthlyStatistics([completed, { ...open, planned_departure_at: null }], [], '2026-10', now).projectedMinutes, 960)
 
   const morning = { started_at: '2026-10-07T05:00:00Z', ended_at: '2026-10-07T07:00:00Z', lunch_started_at: '2026-10-07T06:00:00Z' }
   const afternoon = { ...open, started_at: '2026-10-07T08:00:00Z', planned_departure_at: '2026-10-07T14:00:00Z' }
   const split = getMonthlyStatistics([morning, afternoon], [], '2026-10', now)
   assert.equal(split.workedMinutes, 90)
   assert.equal(split.plannedWorkMinutes, 360)
-  assert.equal(split.projectedMinutes, 450)
+  assert.equal(split.projectedMinutes, 930)
+})
+
+test('paid holidays move from planned to fulfilled on the Prague holiday date', () => {
+  const before = getMonthlyStatistics([], [], '2026-10', new Date('2026-10-27T22:59:59Z'))
+  const holiday = getMonthlyStatistics([], [
+    { date: '2026-10-28', type: 'vacation', duration_minutes: 240 },
+    { date: '2026-10-28', type: 'holiday', duration_minutes: 480 },
+  ], '2026-10', new Date('2026-10-27T23:00:00Z'))
+  assert.equal(before.plannedHolidayMinutes, 480)
+  assert.equal(before.fulfilledMinutes, 0)
+  assert.equal(holiday.plannedHolidayMinutes, 0)
+  assert.equal(holiday.creditedHolidayMinutes, 480)
+  assert.equal(holiday.creditedLeaveMinutes, 0)
+  assert.equal(holiday.fulfilledMinutes, 480)
+  assert.equal(holiday.projectedMinutes, before.projectedMinutes)
+  assert.equal(holiday.fundMinutes, before.fundMinutes)
 })
 
 test('monthly assignment follows Prague arrival date and completed work can exceed Fond', () => {

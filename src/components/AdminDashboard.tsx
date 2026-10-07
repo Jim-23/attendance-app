@@ -12,6 +12,7 @@ import { leaveLabels } from '../lib/leave'
 import { getMonthlyStatistics } from '../lib/monthly'
 import type { MonthlySession } from '../lib/monthly'
 import MonthlyStatisticsCards from './MonthlyStatisticsCards'
+import MonthInput from './MonthInput'
 
 interface AdminDashboardProps {
   onBack: () => void
@@ -243,9 +244,7 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
                 </form>
                 <div className="form-field admin-month">
                   <label htmlFor="admin-month">Měsíc statistik</label>
-                  <input id="admin-month" type="month" value={month} onChange={(event) => {
-                    if (event.target.value) setMonth(event.target.value)
-                  }} />
+                  <MonthInput id="admin-month" value={month} onChange={setMonth} />
                 </div>
                 {!stats ? (
                   <p>{attendanceFailedFor === selectedId
@@ -264,7 +263,7 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
                     </div>
                     {attendance?.openSession && <p>Otevřená docházka od {formatDate(attendance.openSession)} {formatTime(attendance.openSession)}.</p>}
                     <p className="calendar-note">
-                      Fond nezahrnuje víkendy a svátky. Splněno zahrnuje dokončenou práci a volno
+                      Fond zahrnuje všední dny včetně svátků. Splněno zahrnuje dokončenou práci, volno a placené svátky
                       do dneška; budoucí plány jsou zvlášť. Roční volno zahrnuje i plánované záznamy.
                     </p>
                     <h3>Docházka v měsíci</h3>
