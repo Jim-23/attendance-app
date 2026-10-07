@@ -16,6 +16,15 @@ day of departure, defaulting to the arrival day with arrival + 8 h 30 min
 already recorded session, and a departure must come after the arrival and any
 recorded lunch start.
 
+When recording **Příchod**, users can optionally enable **Naplánovat automatický
+odchod** and select a departure time later today. The option is off by default.
+The session stays open until that time; an earlier manual **Odchod** overrides
+the plan. Supabase Cron completes due sessions every minute using the exact
+planned timestamp, even while the app is closed. The open app refreshes planned
+sessions every 30 seconds and on window focus. Normal rounding and lunch rules
+apply after completion. This requires the migration and Cron setup described in
+[Supabase setup](./supabase/README.md).
+
 The calendar displays recorded sessions and leave, plus Czech public holidays
 (including Good Friday and Easter Monday). These holiday markers are
 informational only: they do not create leave records or change attendance

@@ -20,6 +20,26 @@ are performed by the app build.
    which lets users delete their own work sessions and rejects overlapping
    sessions or a departure before arrival (an open session counts as running
    indefinitely). Existing overlaps are kept until those sessions are changed.
+   Then apply
+   [202610070002_planned_departures.sql](./migrations/202610070002_planned_departures.sql).
+   It adds optional planned departure times and database functions to finish due
+   sessions. **Before deploying the frontend**, enable **Supabase Cron**
+   (`pg_cron`) in the Supabase dashboard and run
+   [schedule_planned_departures.sql](./schedule_planned_departures.sql) as the
+   database owner. This schedules completion every minute, independent of any
+   browser. `ended_at` is the exact planned timestamp, not the job execution
+   time. A manually recorded departure clears the plan.
+
+   Verify the job exists and is active:
+   ```sql
+   select jobid, jobname, schedule, active
+   from cron.job where jobname = 'attendance-planned-departures';
+   ```
+   Test an arrival with a planned departure a few minutes ahead, close the app,
+   and verify that `ended_at` is populated after the next scheduled run. Check
+   job failures in Supabase Cron or `cron.job_run_details`; a failing/disabled
+   job means unattended completion will not work. Opening the app also finishes
+   the logged-in user's due plan, but does not replace Cron.
 2. If no existing administrator is present, promote a trusted **existing**
    account through the SQL editor as database owner:
 
@@ -89,13 +109,18 @@ database, then apply these files in order with `psql -v ON_ERROR_STOP=1`:
 2. [migrations/202610020001_invitations_and_admin.sql](./migrations/202610020001_invitations_and_admin.sql)
 3. [migrations/202610060001_one_lunch_per_day.sql](./migrations/202610060001_one_lunch_per_day.sql)
 4. [migrations/202610070001_calendar_editing.sql](./migrations/202610070001_calendar_editing.sql)
-5. [tests/invitations_and_admin.sql](./tests/invitations_and_admin.sql)
-6. [tests/one_lunch_per_day.sql](./tests/one_lunch_per_day.sql)
-7. [tests/calendar_editing.sql](./tests/calendar_editing.sql)
+5. [migrations/202610070002_planned_departures.sql](./migrations/202610070002_planned_departures.sql)
+6. [tests/invitations_and_admin.sql](./tests/invitations_and_admin.sql)
+7. [tests/one_lunch_per_day.sql](./tests/one_lunch_per_day.sql)
+8. [tests/calendar_editing.sql](./tests/calendar_editing.sql)
+9. [tests/planned_departures.sql](./tests/planned_departures.sql)
 
 The regression suite checks invalid/missing/reused/expired/revoked invitations,
 email binding, ignored role metadata, role and RLS restrictions, last-admin
 protection, company-wide leave dates/durations, shared annual allowance, one
-lunch per day, session overlap prevention, and the work session delete policy.
+lunch per day, session overlap prevention, the work session delete policy,
+planned departure validation, early manual completion, exact automatic timestamps,
+and isolation of the user-scoped completion RPC. The fixture does not install
+pg_cron; verify scheduling separately in Supabase as described above.
 This verifies database logic; production email delivery and Supabase Auth
 configuration still require deployment smoke tests.

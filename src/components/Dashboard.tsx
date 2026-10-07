@@ -44,6 +44,7 @@ interface WorkSession {
     started_at: string
     ended_at: string | null
     lunch_started_at: string | null
+    planned_departure_at: string | null
 }
 
 interface HistorySession {
@@ -51,6 +52,7 @@ interface HistorySession {
     started_at: string
     ended_at: string
     lunch_started_at: string | null
+    planned_departure_at: string | null
 }
 
 interface WorkDay {
@@ -137,6 +139,8 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
     const [pendingAction, setPendingAction] = useState<'arrival' | 'departure' | null>(null)
     const [pendingTime, setPendingTime] = useState('')
     const [pendingDate, setPendingDate] = useState('')
+    const [planDeparture, setPlanDeparture] = useState(false)
+    const [plannedDepartureTime, setPlannedDepartureTime] = useState('16:30')
 
 
     const loadWorkDays = useCallback(async () => {
@@ -176,9 +180,16 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
     }, [setMessage, userId])
 
     const loadOpenSession = useCallback(async () => {
+        const { error: finishError } = await supabase.rpc('finish_my_planned_departure')
+        if (finishError) {
+            console.error('Failed to finish planned departure:', finishError)
+            setMessage('Nepodařilo se ověřit plánovaný odchod.')
+            setLoading(false)
+            return null
+        }
         const { data, error } = await supabase
             .from('work_sessions')
-            .select('id, started_at, ended_at, lunch_started_at')
+            .select('id, started_at, ended_at, lunch_started_at, planned_departure_at')
             .eq('user_id', userId)
             .is('ended_at', null)
             .order('started_at', { ascending: false })
@@ -204,7 +215,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
         while (true) {
             const { data, error } = await supabase
                 .from('work_sessions')
-                .select('id, started_at, ended_at, lunch_started_at')
+                .select('id, started_at, ended_at, lunch_started_at, planned_departure_at')
                 .eq('user_id', userId)
                 .not('ended_at', 'is', null)
                 .order('started_at', { ascending: false })
@@ -319,10 +330,9 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
     }, [setMessage, userId])
 
     useEffect(() => {
-        void Promise.resolve().then(() => {
-            loadOpenSession()
-            loadHistory()
-            loadWorkDays()
+        void Promise.resolve().then(async () => {
+            await loadOpenSession()
+            await Promise.all([loadHistory(), loadWorkDays()])
         })
     }, [loadHistory, loadOpenSession, loadWorkDays])
 
@@ -330,6 +340,27 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
         const timer = window.setInterval(() => setNow(new Date()), 30_000)
         return () => window.clearInterval(timer)
     }, [])
+
+    useEffect(() => {
+        if (!workSession?.planned_departure_at) return
+        let refreshing = false
+        const refresh = async () => {
+            if (refreshing) return
+            refreshing = true
+            try {
+                await loadOpenSession()
+                await loadHistory()
+            } finally {
+                refreshing = false
+            }
+        }
+        const timer = window.setInterval(() => void refresh(), 30_000)
+        window.addEventListener('focus', refresh)
+        return () => {
+            window.clearInterval(timer)
+            window.removeEventListener('focus', refresh)
+        }
+    }, [workSession?.planned_departure_at, loadOpenSession, loadHistory])
 
 async function addLeaveRecords(input: LeaveInput): Promise<boolean> {
     const { type: dayType, dateFrom: dayDateFrom, note: dayNote } = input
@@ -594,6 +625,7 @@ async function handleDeleteDayRecord(id: number) {
     setPendingDate(today)
     setPendingTime(formatInTimeZone(current, APP_TIMEZONE, 'HH:mm'))
     setMessage(null)
+    setPlanDeparture(false)
 
     // A session left open from an earlier day is most likely finished on its
     // arrival day: suggest arrival + 8 h 30 min, at the latest 23:45 that day.
@@ -620,6 +652,7 @@ async function handleDeleteDayRecord(id: number) {
     setPendingAction(null)
     setPendingTime('')
     setPendingDate('')
+    setPlanDeparture(false)
   }
 
   function parsePendingTime(date?: string): Date | null {
@@ -651,6 +684,17 @@ async function handleDeleteDayRecord(id: number) {
       return
     }
 
+    const plannedDeparture = planDeparture
+      ? parseDateTimeLocal(`${formatInTimeZone(arrival, APP_TIMEZONE, 'yyyy-MM-dd')}T${plannedDepartureTime}`)
+      : null
+    if (plannedDeparture && (
+      !Number.isFinite(plannedDeparture.getTime()) ||
+      plannedDeparture <= arrival || plannedDeparture <= new Date()
+    )) {
+      setMessage('Plánovaný odchod musí být později než příchod a v budoucnosti.')
+      return
+    }
+
     setActionLoading(true)
     setMessage(null)
 
@@ -679,8 +723,9 @@ async function handleDeleteDayRecord(id: number) {
       .insert({
         user_id: userId,
         started_at: arrival.toISOString(),
+        planned_departure_at: plannedDeparture?.toISOString() ?? null,
       })
-      .select('id, started_at, ended_at, lunch_started_at')
+      .select('id, started_at, ended_at, lunch_started_at, planned_departure_at')
       .single()
 
     if (error) {
@@ -726,8 +771,9 @@ async function handleDeleteDayRecord(id: number) {
         lunch_started_at: new Date().toISOString(),
       })
       .eq('id', workSession.id)
+      .is('ended_at', null)
       .is('lunch_started_at', null)
-      .select('id, started_at, ended_at, lunch_started_at')
+      .select('id, started_at, ended_at, lunch_started_at, planned_departure_at')
       .single()
 
     if (error) {
@@ -737,6 +783,8 @@ async function handleDeleteDayRecord(id: number) {
           ? 'Oběd už byl dnes započítán.'
           : 'Nepodařilo se zaznamenat oběd.',
       )
+      await loadOpenSession()
+      await loadHistory()
     } else {
       setWorkSession(data)
       setMessage('Oběd zaznamenán na 30 minut.', 'success')
@@ -783,7 +831,13 @@ async function handleDeleteDayRecord(id: number) {
 
     if (error) {
       console.error('Failed to record departure:', error)
-      setMessage('Nepodařilo se zaznamenat odchod.')
+      setMessage(
+        error.code === 'PGRST116'
+          ? 'Docházka již byla ukončena. Načítám aktuální záznam.'
+          : 'Nepodařilo se zaznamenat odchod.',
+      )
+      await loadOpenSession()
+      await loadHistory()
     } else {
         setWorkSession(null)
         closeTimePicker()
@@ -837,6 +891,34 @@ async function handleDeleteDayRecord(id: number) {
             autoFocus
           />
         </div>
+        {action === 'arrival' && (
+          <>
+            <label>
+              <input
+                type="checkbox"
+                checked={planDeparture}
+                onChange={(event) => setPlanDeparture(event.target.checked)}
+                disabled={actionLoading}
+              />{' '}
+              Naplánovat automatický odchod (volitelné)
+            </label>
+            {planDeparture && (
+              <div className="form-field time-picker-field">
+                <label htmlFor="planned-departure-time">Plánovaný čas odchodu</label>
+                <TimeInput
+                  id="planned-departure-time"
+                  value={plannedDepartureTime}
+                  onChange={setPlannedDepartureTime}
+                  disabled={actionLoading}
+                />
+                <p className="calendar-note">
+                  Docházka se dnes automaticky ukončí v tomto čase, i když aplikaci zavřeš.
+                  Dřívější odchod můžeš zaznamenat tlačítkem Odchod.
+                </p>
+              </div>
+            )}
+          </>
+        )}
         <div className="time-picker-actions">
           <button
             type="submit"
@@ -907,7 +989,7 @@ async function handleDeleteDayRecord(id: number) {
         error.code === '23P01'
           ? 'Docházka se překrývá s jiným záznamem.'
           : error.code === '23514'
-            ? 'V tento den už je zaznamenaný oběd.'
+            ? 'Časy neodpovídají zaznamenanému obědu nebo plánovanému odchodu.'
             : 'Nepodařilo se uložit docházku.',
       )
       setActionLoading(false)
@@ -1301,6 +1383,11 @@ return (
                                     <span className="stat-description">
                                         {formatDate(workSession.started_at)}
                                     </span>
+                                    {workSession.planned_departure_at && (
+                                        <span className="stat-description">
+                                            Automatický odchod: {formatTime(workSession.planned_departure_at)}
+                                        </span>
+                                    )}
                                 </div>
 
                                 {workSession.lunch_started_at && (
