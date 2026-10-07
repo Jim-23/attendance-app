@@ -107,8 +107,8 @@ function CalendarDayPanel({
 
   function startAdding() {
     setEditingId('new')
-    setArrival('08:00')
-    setDeparture('16:30')
+    setArrival('06:00')
+    setDeparture('14:30')
   }
 
   async function handleSaveSession(event: FormEvent, session?: PanelSession) {
