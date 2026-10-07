@@ -3,7 +3,7 @@
 ## Dashboard and calendar
 
 The dashboard shows today's date and attendance totals in `Europe/Prague`,
-followed by a read-only monthly calendar. Use the header menu to switch to
+followed by an editable monthly calendar. Use the header menu to switch to
 History (including session corrections), Leave, or Statistics; **Odhlásit** is
 at the bottom of the menu. Times are always entered in 24-hour format.
 
@@ -18,6 +18,13 @@ The calendar displays recorded sessions and leave, plus Czech public holidays
 informational only: they do not create leave records or change attendance
 balances. Navigate between months or use **Dnes** to return to the current month.
 On small screens the calendar scrolls horizontally.
+
+Click a day (or its date button) to open the day panel. There you can add,
+edit, or delete that day's work sessions (time only, on that date) and add or
+delete leave. Sessions cannot be added for future days, leave can only be
+added on weekdays, and a running session can only have its arrival changed.
+Sessions crossing midnight are edited in History. Overlapping sessions are
+rejected both in the app and in the database.
 Holiday dates follow the [Czech National Bank's public holiday list](https://www.cnb.cz/en/public/media-service/schedules-and-other-info/bank-holidays-in-the-czech-republic/),
 with movable Easter dates calculated for the displayed year.
 

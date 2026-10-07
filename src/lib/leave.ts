@@ -19,3 +19,14 @@ export function getVacationUsedMinutes(days: WorkDayForBalance[]): number {
     .filter((day) => usesVacationAllowance(day.type))
     .reduce((total, day) => total + day.duration_minutes, 0)
 }
+
+export type UserLeaveType = Exclude<LeaveType, 'holiday'>
+
+export interface LeaveInput {
+  type: UserLeaveType
+  dateFrom: string
+  // Empty string means a single day (dateFrom).
+  dateTo: string
+  durationMinutes: number
+  note: string
+}

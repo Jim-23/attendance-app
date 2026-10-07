@@ -29,9 +29,17 @@ interface AttendanceCalendarProps {
   sessions: CalendarSession[]
   workDays: CalendarLeave[]
   today: string
+  selectedDate?: string | null
+  onSelectDate?: (date: string) => void
 }
 
-function AttendanceCalendar({ sessions, workDays, today }: AttendanceCalendarProps) {
+function AttendanceCalendar({
+  sessions,
+  workDays,
+  today,
+  selectedDate = null,
+  onSelectDate,
+}: AttendanceCalendarProps) {
   const [month, setMonth] = useState(today.slice(0, 7))
   const days = getMonthDays(month)
   const holidays = new Map(
@@ -80,6 +88,7 @@ function AttendanceCalendar({ sessions, workDays, today }: AttendanceCalendarPro
       </div>
       <p className="calendar-note">
         Přehled docházky, volna a českých svátků. Svátky jsou informativní a nemění bilanci.
+        {onSelectDate && ' Kliknutím na den můžeš upravit docházku a volno.'}
       </p>
       <div className="calendar-scroll">
         <table className="calendar-table">
@@ -97,10 +106,31 @@ function AttendanceCalendar({ sessions, workDays, today }: AttendanceCalendarPro
                     !day.inMonth ? 'calendar-outside' : '',
                     day.weekend ? 'calendar-weekend' : '',
                     day.date === today ? 'calendar-today' : '',
-                  ].join(' ')}>
-                    <time dateTime={day.date} aria-current={day.date === today ? 'date' : undefined}>
-                      {Number(day.date.slice(8))}{day.date === today && ' · dnes'}
-                    </time>
+                    day.date === selectedDate ? 'calendar-selected' : '',
+                    onSelectDate ? 'calendar-editable' : '',
+                  ].join(' ')}
+                  onClick={onSelectDate ? () => onSelectDate(day.date) : undefined}>
+                    {onSelectDate ? (
+                      <button
+                        type="button"
+                        className="calendar-day-button"
+                        aria-label={`Upravit ${new Intl.DateTimeFormat('cs-CZ', {
+                          day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+                        }).format(new Date(`${day.date}T00:00:00Z`))}`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onSelectDate(day.date)
+                        }}
+                      >
+                        <time dateTime={day.date} aria-current={day.date === today ? 'date' : undefined}>
+                          {Number(day.date.slice(8))}{day.date === today && ' · dnes'}
+                        </time>
+                      </button>
+                    ) : (
+                      <time dateTime={day.date} aria-current={day.date === today ? 'date' : undefined}>
+                        {Number(day.date.slice(8))}{day.date === today && ' · dnes'}
+                      </time>
+                    )}
                     {holidays.has(day.date) && (
                       <p className="calendar-event calendar-holiday">{holidays.get(day.date)}</p>
                     )}

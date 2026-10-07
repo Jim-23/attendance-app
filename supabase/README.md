@@ -15,7 +15,11 @@ are performed by the app build.
    [202610060001_one_lunch_per_day.sql](./migrations/202610060001_one_lunch_per_day.sql),
    which allows at most one recorded lunch per user and Prague day (by arrival
    date) and requires the lunch to lie within its session. Existing duplicate
-   lunches are kept; the app counts only the first one of the day.
+   lunches are kept; the app counts only the first one of the day. Finally apply
+   [202610070001_calendar_editing.sql](./migrations/202610070001_calendar_editing.sql),
+   which lets users delete their own work sessions and rejects overlapping
+   sessions or a departure before arrival (an open session counts as running
+   indefinitely). Existing overlaps are kept until those sessions are changed.
 2. If no existing administrator is present, promote a trusted **existing**
    account through the SQL editor as database owner:
 
@@ -84,11 +88,14 @@ database, then apply these files in order with `psql -v ON_ERROR_STOP=1`:
 1. [tests/fixture.sql](./tests/fixture.sql)
 2. [migrations/202610020001_invitations_and_admin.sql](./migrations/202610020001_invitations_and_admin.sql)
 3. [migrations/202610060001_one_lunch_per_day.sql](./migrations/202610060001_one_lunch_per_day.sql)
-4. [tests/invitations_and_admin.sql](./tests/invitations_and_admin.sql)
-5. [tests/one_lunch_per_day.sql](./tests/one_lunch_per_day.sql)
+4. [migrations/202610070001_calendar_editing.sql](./migrations/202610070001_calendar_editing.sql)
+5. [tests/invitations_and_admin.sql](./tests/invitations_and_admin.sql)
+6. [tests/one_lunch_per_day.sql](./tests/one_lunch_per_day.sql)
+7. [tests/calendar_editing.sql](./tests/calendar_editing.sql)
 
 The regression suite checks invalid/missing/reused/expired/revoked invitations,
 email binding, ignored role metadata, role and RLS restrictions, last-admin
-protection, company-wide leave dates/durations, and shared annual allowance.
+protection, company-wide leave dates/durations, shared annual allowance, one
+lunch per day, session overlap prevention, and the work session delete policy.
 This verifies database logic; production email delivery and Supabase Auth
 configuration still require deployment smoke tests.

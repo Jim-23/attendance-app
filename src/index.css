@@ -347,6 +347,143 @@ button:disabled {
     box-shadow: inset 0 0 0 2px var(--color-primary);
 }
 
+.calendar-editable {
+    cursor: pointer;
+}
+
+.calendar-editable:hover {
+    background: var(--color-surface-hover);
+}
+
+.calendar-selected {
+    background: var(--color-primary-light);
+}
+
+.calendar-day-button {
+    display: block;
+    margin: 0;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.calendar-day-button:hover time,
+.calendar-day-button:focus-visible time {
+    color: var(--color-primary);
+    text-decoration: underline;
+}
+
+.calendar-day-button:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* ==================== DAY PANEL ==================== */
+
+.day-panel {
+    width: min(560px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    padding: 20px;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-medium);
+    box-shadow: 0 20px 50px rgb(15 23 42 / 25%);
+}
+
+.day-panel::backdrop {
+    background: rgb(15 23 42 / 45%);
+}
+
+.day-panel .message {
+    position: static;
+    margin-bottom: 16px;
+}
+
+.day-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.day-panel-header h2 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.day-panel-holiday {
+    margin: 4px 0 0;
+    color: var(--color-warning);
+    font-weight: 600;
+}
+
+.day-panel-section {
+    padding-top: 16px;
+    margin-top: 16px;
+    border-top: 1px solid var(--color-border);
+}
+
+.day-panel-section h3 {
+    margin: 0 0 10px;
+    font-size: 16px;
+}
+
+.day-panel-list {
+    margin: 0 0 12px;
+    padding: 0;
+    list-style: none;
+}
+
+.day-panel-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--color-border-light);
+}
+
+.day-panel-item > div:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.day-panel-meta {
+    color: var(--color-text-muted);
+    font-size: 13px;
+}
+
+.day-panel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+.day-panel-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    align-items: end;
+    width: 100%;
+}
+
+.day-panel-form .form-field {
+    margin: 0;
+}
+
+.day-panel-wide {
+    grid-column: 1 / -1;
+}
+
 .calendar-event {
     margin: 5px 0 0;
     padding: 6px;

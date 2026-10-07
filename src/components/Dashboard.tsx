@@ -4,6 +4,11 @@ import { formatInTimeZone } from 'date-fns-tz'
 import AttendanceCalendar from './AttendanceCalendar'
 import { DateTimeInput, TimeInput } from './TimeInput'
 import { getVacationUsedMinutes, leaveLabels, usesVacationAllowance } from '../lib/leave'
+import type { LeaveInput } from '../lib/leave'
+import { validateSessionChange } from '../lib/sessions'
+import type { SessionChange } from '../lib/sessions'
+import CalendarDayPanel from './CalendarDayPanel'
+import { getCzechHolidays } from '../lib/calendar'
 
 import {
     formatTime,
@@ -103,6 +108,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
     const [dayDateTo, setDayDateTo] = useState('')
     const [dayNote, setDayNote] = useState('')
     const [workDays, setWorkDays] = useState<WorkDay[]>([])
+    const [selectedDate, setSelectedDate] = useState<string | null>(null)
     const [workDaysLoading, setWorkDaysLoading] = useState(true)
     const [compHours, setCompHours] = useState(0)
     const [compMinutes, setCompMinutes] = useState(15)
@@ -305,30 +311,30 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
         return () => window.clearInterval(timer)
     }, [])
 
-async function handleAddDayRecord() {
+async function addLeaveRecords(input: LeaveInput): Promise<boolean> {
+    const { type: dayType, dateFrom: dayDateFrom, note: dayNote } = input
+
     if (!dayDateFrom) {
         setMessage('Vyber datum od.')
-        return
+        return false
     }
 
-    const dateTo = dayDateTo || dayDateFrom
+    const dateTo = input.dateTo || dayDateFrom
 
     if (dayType === 'mandatory_vacation' && dateTo !== dayDateFrom) {
         setMessage('Celozávodní dovolenou zadej pro jeden konkrétní den.')
-        return
+        return false
     }
 
     if (dateTo < dayDateFrom) {
         setMessage('Datum do nemůže být před datem od.')
-        return
+        return false
     }
 
     const duration =
-        dayType === 'comp_time'
-            ? compHours * 60 + compMinutes
-            : dayType === 'mandatory_vacation' || dayType === 'sick_day'
-              ? 480
-              : dayDuration
+        dayType === 'mandatory_vacation' || dayType === 'sick_day'
+            ? 480
+            : input.durationMinutes
 
     setActionLoading(true)
     setMessage(null)
@@ -338,7 +344,7 @@ async function handleAddDayRecord() {
             'Náhradní volno musí trvat alespoň 15 minut.',
         )
         setActionLoading(false)
-        return
+        return false
     }
 
     const dates: string[] = []
@@ -364,7 +370,7 @@ async function handleAddDayRecord() {
             'Vybraný rozsah neobsahuje žádný pracovní den.',
         )
         setActionLoading(false)
-        return
+        return false
     }
 
     // Náhradní volno se zadává pouze pro jeden konkrétní den.
@@ -373,7 +379,7 @@ async function handleAddDayRecord() {
             'Náhradní volno lze přidat pouze pro jeden den.',
         )
         setActionLoading(false)
-        return
+        return false
     }
 
     const existingWorkDays = workDays.filter(
@@ -399,7 +405,7 @@ async function handleAddDayRecord() {
             `Pro ${invalidDate} už je evidováno příliš mnoho volna.`,
         )
         setActionLoading(false)
-        return
+        return false
     }
 
     // Kontrola ročních limitů.
@@ -467,7 +473,7 @@ async function handleAddDayRecord() {
                 )
 
                 setActionLoading(false)
-                return
+                return false
             }
         }
     }
@@ -491,6 +497,8 @@ async function handleAddDayRecord() {
         )
 
         setMessage('Nepodařilo se uložit záznamy.')
+        setActionLoading(false)
+        return false
     } else {
         setMessage(
             dates.length === 1
@@ -499,18 +507,34 @@ async function handleAddDayRecord() {
             'success',
         )
 
+        await loadWorkDays()
+        await loadHistory()
+    }
+
+    setActionLoading(false)
+    return true
+}
+
+async function handleAddDayRecord() {
+    const saved = await addLeaveRecords({
+        type: dayType,
+        dateFrom: dayDateFrom,
+        dateTo: dayDateTo,
+        durationMinutes:
+            dayType === 'comp_time'
+                ? compHours * 60 + compMinutes
+                : dayDuration,
+        note: dayNote,
+    })
+
+    if (saved) {
         setDayDateFrom('')
         setDayDateTo('')
         setDayNote('')
         setDayDuration(480)
         setCompHours(0)
         setCompMinutes(15)
-
-        await loadWorkDays()
-        await loadHistory()
     }
-
-    setActionLoading(false)
 }
 
 async function handleDeleteDayRecord(id: number) {
@@ -775,34 +799,67 @@ async function handleDeleteDayRecord(id: number) {
     setMessage(null)
   }
 
-  async function handleSaveSession(session: HistorySession) {
-    const arrival = parseDateTimeLocal(editedArrival)
-    const departure = parseDateTimeLocal(editedDeparture)
+  async function saveSession(change: SessionChange): Promise<boolean> {
+    const validationError = validateSessionChange(
+      change,
+      workSession ? [...history, workSession] : history,
+    )
 
-    if (
-      !Number.isFinite(arrival.getTime()) ||
-      !Number.isFinite(departure.getTime())
-    ) {
-      setMessage('Zadej platný čas příchodu a odchodu.')
-      return
+    if (validationError) {
+      setMessage(validationError)
+      return false
     }
 
-    if (arrival >= departure) {
-      setMessage('Odchod musí být později než příchod.')
-      return
+    setActionLoading(true)
+    setMessage(null)
+
+    const values = {
+      started_at: change.arrival.toISOString(),
+      ...(change.departure
+        ? { ended_at: change.departure.toISOString() }
+        : {}),
     }
 
-    if (session.lunch_started_at) {
-      const lunchStartedAt = new Date(session.lunch_started_at)
-      if (
-        lunchStartedAt < arrival ||
-        lunchStartedAt >= departure
-      ) {
-        setMessage(
-          'Upravený čas musí zahrnovat již zaznamenaný začátek oběda.',
-        )
-        return
-      }
+    const { error } =
+      change.id === null
+        ? await supabase
+            .from('work_sessions')
+            .insert({ user_id: userId, ...values })
+            .select('id')
+            .single()
+        : await supabase
+            .from('work_sessions')
+            .update(values)
+            .eq('id', change.id)
+            .eq('user_id', userId)
+            .select('id')
+            .single()
+
+    if (error) {
+      console.error('Failed to save work session:', error)
+      setMessage(
+        error.code === '23P01'
+          ? 'Docházka se překrývá s jiným záznamem.'
+          : error.code === '23514'
+            ? 'V tento den už je zaznamenaný oběd.'
+            : 'Nepodařilo se uložit docházku.',
+      )
+      setActionLoading(false)
+      return false
+    }
+
+    setMessage(
+      change.id === null ? 'Docházka přidána.' : 'Docházka upravena.',
+      'success',
+    )
+    await Promise.all([loadHistory(), loadOpenSession()])
+    setActionLoading(false)
+    return true
+  }
+
+  async function deleteSession(id: number) {
+    if (!window.confirm('Opravdu chceš tento pracovní záznam smazat?')) {
+      return
     }
 
     setActionLoading(true)
@@ -810,26 +867,37 @@ async function handleDeleteDayRecord(id: number) {
 
     const { error } = await supabase
       .from('work_sessions')
-      .update({
-        started_at: arrival.toISOString(),
-        ended_at: departure.toISOString(),
-      })
-      .eq('id', session.id)
+      .delete()
+      .eq('id', id)
       .eq('user_id', userId)
-      .not('ended_at', 'is', null)
       .select('id')
       .single()
 
     if (error) {
-      console.error('Failed to update work session:', error)
-      setMessage('Nepodařilo se upravit docházku.')
+      console.error('Failed to delete work session:', error)
+      setMessage('Nepodařilo se smazat docházku.')
     } else {
-      setEditingSessionId(null)
-      setMessage('Příchod a odchod byly upraveny.', 'success')
-      await loadHistory()
+      if (workSession?.id === id) {
+        closeTimePicker()
+      }
+      setMessage('Docházka smazána.', 'success')
+      await Promise.all([loadHistory(), loadOpenSession()])
     }
 
     setActionLoading(false)
+  }
+
+  async function handleSaveSession(session: HistorySession) {
+    const saved = await saveSession({
+      id: session.id,
+      arrival: parseDateTimeLocal(editedArrival),
+      departure: parseDateTimeLocal(editedDeparture),
+      lunchStartedAt: session.lunch_started_at,
+    })
+
+    if (saved) {
+      setEditingSessionId(null)
+    }
   }
 
   function handleCancelEdit() {
@@ -838,6 +906,33 @@ async function handleDeleteDayRecord(id: number) {
     setEditedDeparture('')
     setMessage(null)
   }
+
+function renderMessage() {
+    if (!message) {
+        return null
+    }
+
+    return (
+
+                <div
+                    className={`message message-${message.tone}`}
+                    role={message.tone === 'error' ? 'alert' : 'status'}
+                >
+                    <span className="message-icon" aria-hidden="true">
+                        {message.tone === 'error' ? '!' : message.tone === 'success' ? '✓' : 'i'}
+                    </span>
+                    <span className="message-text">{message.text}</span>
+                    <button
+                        type="button"
+                        className="message-close"
+                        aria-label="Zavřít zprávu"
+                        onClick={() => setMessage(null)}
+                    >
+                        ×
+                    </button>
+                </div>
+    )
+}
 
 const todayDate = formatInTimeZone(
     now,
@@ -1074,25 +1169,7 @@ return (
 
         <main className="dashboard-content">
           {/* ==================== MESSAGE ==================== */}
-            {message && (
-                <div
-                    className={`message message-${message.tone}`}
-                    role={message.tone === 'error' ? 'alert' : 'status'}
-                >
-                    <span className="message-icon" aria-hidden="true">
-                        {message.tone === 'error' ? '!' : message.tone === 'success' ? '✓' : 'i'}
-                    </span>
-                    <span className="message-text">{message.text}</span>
-                    <button
-                        type="button"
-                        className="message-close"
-                        aria-label="Zavřít zprávu"
-                        onClick={() => setMessage(null)}
-                    >
-                        ×
-                    </button>
-                </div>
-            )}
+            {!selectedDate && renderMessage()}
 
             {/* ==================== TODAY ==================== */}
 
@@ -1308,7 +1385,32 @@ return (
                 today={todayDate}
                 sessions={workSession ? [...history, workSession] : history}
                 workDays={workDays}
+                selectedDate={selectedDate}
+                onSelectDate={setSelectedDate}
             />
+            {selectedDate && (
+                <CalendarDayPanel
+                    key={selectedDate}
+                    date={selectedDate}
+                    today={todayDate}
+                    holiday={getCzechHolidays(Number(selectedDate.slice(0, 4))).get(selectedDate)}
+                    sessions={(workSession ? [...history, workSession] : history).filter(
+                        (session) =>
+                            formatInTimeZone(new Date(session.started_at), APP_TIMEZONE, 'yyyy-MM-dd') === selectedDate,
+                    )}
+                    leave={workDays.filter((day) => day.date === selectedDate)}
+                    busy={actionLoading}
+                    message={renderMessage()}
+                    onClose={() => {
+                        setSelectedDate(null)
+                        setMessage(null)
+                    }}
+                    onSaveSession={saveSession}
+                    onDeleteSession={deleteSession}
+                    onAddLeave={addLeaveRecords}
+                    onDeleteLeave={handleDeleteDayRecord}
+                />
+            )}
             </>
             )}
 

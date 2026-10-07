@@ -104,3 +104,29 @@ test('only one lunch is deducted per Prague day', () => {
   assert.equal(hasLunchOnDate([morning, open], '2026-10-06'), true)
   assert.equal(hasLunchOnDate([morning, open], '2026-10-07'), false)
 })
+
+const { validateSessionChange } = loadModule(resolve('src/lib/sessions.ts'))
+
+test('session changes reject overlaps, future times and a second lunch', () => {
+  const now = new Date('2030-04-01T16:00:00Z')
+  const sessions = [
+    { id: 1, started_at: '2030-04-01T06:00:00Z', ended_at: '2030-04-01T10:00:00Z', lunch_started_at: '2030-04-01T09:00:00Z' },
+    { id: 2, started_at: '2030-04-01T13:00:00Z', ended_at: null, lunch_started_at: null },
+  ]
+  const change = (id, arrival, departure, lunchStartedAt = null) => validateSessionChange(
+    { id, arrival: new Date(arrival), departure: departure && new Date(departure), lunchStartedAt },
+    sessions, now,
+  )
+
+  assert.equal(change(null, '2030-04-01T10:00:00Z', '2030-04-01T12:00:00Z'), null)
+  assert.match(change(null, '2030-04-01T09:00:00Z', '2030-04-01T11:00:00Z'), /překrývá/)
+  assert.match(change(null, '2030-04-01T14:00:00Z', '2030-04-01T15:00:00Z'), /probíhá/)
+  assert.match(change(null, '2030-04-01T11:00:00Z', '2030-04-01T10:00:00Z'), /později/)
+  assert.match(change(null, '2030-04-01T15:00:00Z', '2030-04-01T17:00:00Z'), /budoucnosti/)
+  assert.match(change(2, '2030-04-01T09:30:00Z', null), /překrývá/)
+  assert.equal(change(2, '2030-04-01T12:00:00Z', null), null)
+  assert.match(change(1, '2030-04-01T09:30:00Z', '2030-04-01T10:00:00Z', sessions[0].lunch_started_at), /oběda/)
+  sessions[1].lunch_started_at = '2030-04-01T14:00:00Z'
+  assert.match(change(2, '2030-04-01T13:00:00Z', null, sessions[1].lunch_started_at), /oběd/)
+  assert.match(change(null, new Date('invalid'), null), /platný/)
+})
