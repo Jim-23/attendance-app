@@ -20,6 +20,15 @@ export interface DoctorInterval {
   doctor_to?: string | null
 }
 
+export function isDoctorBoundary(
+  time: Date,
+  boundary: 'doctor_from' | 'doctor_to',
+  records: DoctorInterval[],
+): boolean {
+  return records.some((day) => day.type === 'doctor' && day[boundary] &&
+    fromZonedTime(`${day.date}T${day[boundary]}`, 'Europe/Prague').getTime() === time.getTime())
+}
+
 export function doctorOverlapMinutes(
   arrival: Date,
   departure: Date,

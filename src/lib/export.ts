@@ -52,7 +52,7 @@ export function getAttendanceExportRows(
     .filter((session): session is MonthlySession & { ended_at: string } =>
       session.ended_at !== null && new Date(session.ended_at) <= now,
     )
-  const deductions = getDailyLunchDeductions(completed)
+  const deductions = getDailyLunchDeductions(completed, leave)
 
   return months.flatMap((month) => getMonthlyCalendarCredits(leave, month, dailyMinutes).map((day) => {
     const daySessions = completed.filter((session) => localDate(session.started_at) === day.date)

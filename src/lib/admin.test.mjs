@@ -32,7 +32,8 @@ test('leave allowance uses Czech day counts with eight-hour days', () => {
 })
 const { getUserStatistics, getInvitationStatus, isAdminUser } = loadModule(resolve('src/lib/admin.ts'))
 const { calculateDailyBalances, getDailyLunchDeductions, hasLunchOnDate } = loadModule(resolve('src/lib/attendance.ts'))
-const { calculateShiftEnd, calculateMinutesUntil, calculateWorkedMinutes } = loadModule(resolve('src/lib/attendance.ts'))
+const { calculateShiftEnd, calculateMinutesUntil, calculateWorkedMinutes, getAutomaticLunchStart } =
+  loadModule(resolve('src/lib/attendance.ts'))
 const { getMonthlyStatistics } = loadModule(resolve('src/lib/monthly.ts'))
 const { getAttendanceExportRows, EXPORT_HEADERS } = loadModule(resolve('src/lib/export.ts'))
 const { createAttendanceExcel, EXPORT_COLOURS } = loadModule(resolve('src/lib/excelExport.ts'))
@@ -454,6 +455,96 @@ test('doctor overlap respects rounded attendance, lunch, multiple sessions and o
   assert.equal(calculateSessionWorkedMinutes(rounded, null, [doctor('06:00', '06:20')]), 100)
   const overnight = { started_at: '2026-10-01T20:00:00Z', ended_at: '2026-10-02T07:00:00Z', lunch_started_at: null }
   assert.equal(calculateSessionWorkedMinutes(overnight, 'automatic', [doctor('08:00', '08:53', '2026-10-02')]), 577)
+})
+
+test('split attendance adjoining a doctor visit fulfils the day without an extra rounding deficit', async () => {
+  const records = [doctor('08:15', '08:49', '2026-10-06')]
+  const sessions = [
+    { started_at: '2026-10-06T04:00:00Z', ended_at: '2026-10-06T06:15:00Z', lunch_started_at: null },
+    { started_at: '2026-10-06T06:49:00Z', ended_at: '2026-10-06T12:30:00Z', lunch_started_at: null },
+  ]
+  const [balance] = calculateDailyBalances(sessions, records)
+  assert.equal(balance.workedMinutes, 446)
+  assert.equal(balance.creditedMinutes, 19)
+  assert.equal(balance.compTimeMinutes, 15)
+  assert.equal(balance.balanceMinutes, 0)
+  assert.equal(balance.overtimeChangeMinutes, -15)
+  const rows = getAttendanceExportRows(sessions, records, '2026-10', octoberNow)
+  assert.deepEqual(rows[5].slice(2, 6), ['8:00', '8:00', '0:30', '0:00'])
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(await createAttendanceExcel(sessions, records, '2026-10', octoberNow))
+  assert.equal(workbook.worksheets[0].getCell('D7').value, '8:00')
+  assert.equal(workbook.worksheets[0].getCell('F7').value, '0:00')
+  const monthly = getMonthlyStatistics(sessions, records, '2026-10', octoberNow)
+  assert.equal(monthly.workedMinutes, 446)
+  const stats = getUserStatistics(sessions, records, '2026-10', 480, octoberNow)
+  assert.equal(stats.workedMinutes, 446)
+  assert.equal(stats.overtimeMinutes, -15)
+  assert.equal(calculateCurrentWorkedMinutes(new Date(sessions[1].started_at),
+    new Date('2026-10-06T08:00:00Z'), false, records), 71)
+  assert.equal(calculateShiftEnd(new Date(sessions[1].started_at), 311,
+    false, true, records).toISOString(), new Date(sessions[1].ended_at).toISOString())
+  const planned = sessions.map((session, index) => index === 1
+    ? { ...session, ended_at: null, planned_departure_at: session.ended_at } : session)
+  const projection = getMonthlyStatistics(planned, records, '2026-10', new Date('2026-10-06T08:00:00Z'))
+  assert.equal(projection.plannedWorkMinutes, 311)
+})
+
+test('both doctor boundaries retain minutes while ordinary shift boundaries stay rounded', () => {
+  const records = [doctor('08:07', '08:49')]
+  const sessions = [
+    { ...fullShift, ended_at: '2026-10-01T06:07:00Z', lunch_started_at: null },
+    { ...fullShift, started_at: '2026-10-01T06:49:00Z' },
+  ]
+  const [split] = calculateDailyBalances(sessions, records)
+  const [continuous] = calculateDailyBalances([fullShift], records)
+  assert.deepEqual(split, continuous)
+  assert.equal(split.balanceMinutes, 0)
+  assert.equal(split.overtimeChangeMinutes, -23)
+  const roundedSessions = [
+    { ...sessions[0], started_at: '2026-10-01T04:07:00Z' },
+    { ...sessions[1], ended_at: '2026-10-01T12:37:00Z' },
+  ]
+  const [rounded] = calculateDailyBalances(roundedSessions, records)
+  assert.equal(rounded.balanceMinutes, -15)
+  assert.equal(rounded.workedMinutes, split.workedMinutes - 15)
+  assert.equal(calculateSessionWorkedMinutes(sessions[1], 'recorded', []), 300)
+})
+
+test('doctor boundary matching does not fill real gaps or exempt a visit on another date', () => {
+  const records = [doctor('08:15', '08:49', '2026-10-06')]
+  const sessions = [
+    { started_at: '2026-10-06T04:00:00Z', ended_at: '2026-10-06T06:00:00Z', lunch_started_at: null },
+    { started_at: '2026-10-06T07:07:00Z', ended_at: '2026-10-06T12:30:00Z', lunch_started_at: null },
+  ]
+  const [balance] = calculateDailyBalances(sessions, records)
+  assert.equal(balance.balanceMinutes, -41)
+  const otherDate = [doctor('08:15', '08:49', '2026-10-05')]
+  const adjacent = { ...sessions[1], started_at: '2026-10-06T06:49:00Z' }
+  assert.equal(calculateSessionWorkedMinutes(adjacent, 'automatic', otherDate), 300)
+  const changedDoctorEnd = [doctor('08:15', '08:48', '2026-10-06')]
+  assert.equal(calculateSessionWorkedMinutes(adjacent, 'automatic', changedDoctorEnd), 300)
+})
+
+test('automatic lunch threshold and placement use the same exact doctor boundary as work totals', () => {
+  const records = [doctor('08:30', '09:23')]
+  const session = {
+    started_at: '2026-10-01T07:23:00Z', ended_at: '2026-10-01T12:30:00Z', lunch_started_at: null,
+  }
+  assert.equal(getDailyLunchDeductions([session]).get(session), null)
+  assert.equal(getDailyLunchDeductions([session], records).get(session), 'automatic')
+  assert.equal(hasLunchOnDate([session], '2026-10-01', records), true)
+  assert.equal(calculateSessionWorkedMinutes(session, 'automatic', records), 277)
+  assert.equal(getAutomaticLunchStart(new Date(session.started_at), new Date(session.ended_at),
+    false, true, records).toISOString(), '2026-10-01T12:23:00.000Z')
+  const recorded = { ...session, lunch_started_at: '2026-10-01T10:00:00Z' }
+  assert.equal(getDailyLunchDeductions([recorded], records).get(recorded), 'recorded')
+  assert.equal(calculateSessionWorkedMinutes(recorded, 'recorded', records), 277)
+  const stats = getMonthlyStatistics([session], records, '2026-10', octoberNow)
+  assert.equal(stats.workedMinutes, 277)
+  const rows = getAttendanceExportRows([session], records, '2026-10', octoberNow)
+  assert.equal(rows[0][4], '0:30')
+  assert.equal(rows[0][3], '5:30')
 })
 
 test('annual overtime resets at Prague midnight, keeps historical years and has no carry-over', () => {

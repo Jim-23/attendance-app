@@ -1139,7 +1139,7 @@ const todayCompTimeMinutes = todayWorkDays
         0,
     )
 
-const historyLunchDeductions = getDailyLunchDeductions(history)
+const historyLunchDeductions = getDailyLunchDeductions(history, workDays)
 
 const todayCompletedSessions = history.filter(
     (session) =>
@@ -1164,7 +1164,7 @@ const openSessionToday =
 const todayLunchDeductions = getDailyLunchDeductions<WorkSession>([
     ...todayCompletedSessions,
     ...(openSessionToday ? [openSessionToday] : []),
-])
+], workDays)
 
 const todayCompletedWorkedMinutes =
     todayCompletedSessions.reduce(
@@ -1195,6 +1195,7 @@ const lunchAlreadyTaken =
     hasLunchOnDate(
         [...history, workSession],
         formatInTimeZone(new Date(workSession.started_at), APP_TIMEZONE, 'yyyy-MM-dd'),
+        workDays,
     )
 
 const todayWorkedMinutes =
@@ -1753,6 +1754,7 @@ return (
                                             new Date(session.ended_at),
                                             false,
                                             lunchDeduction === 'automatic',
+                                            workDays,
                                         )
 
                                     const sessionDate =

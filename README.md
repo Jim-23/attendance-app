@@ -22,6 +22,13 @@ The visit may overlap attendance; those minutes are removed from counted work
 before crediting the visit. Lunch remains one deduction, and overlapping
 doctor/lunch time is not subtracted from work twice. Doctor visits cannot
 overlap each other and share the existing eight-hour daily leave limit.
+When separate work sessions end exactly at the visit's start or resume exactly
+at its end, those boundaries use exact minutes instead of quarter-hour
+rounding. Other arrivals/departures retain the normal rounding, and actual gaps
+before/after a visit are not filled in. For example, 06:00–08:15 and
+08:49–14:30 with a doctor visit 08:15–08:49 and one 30-minute lunch fulfil
+8 hours: 7 h 26 min work, 19 paid doctor minutes and 15 minutes from overtime.
+The daily Fond balance is zero and the overtime account changes by -15 minutes.
 They do not consume vacation or sick-day allowances. Times and the paid/overtime
 split appear in monthly/yearly Excel notes; calendar and leave lists show the
 time interval. Confirmation is delivered to HR outside the app, not uploaded.

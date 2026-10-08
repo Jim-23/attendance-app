@@ -72,7 +72,7 @@ export function getUserStatistics(
     days.filter((day) => day.date <= today),
     requiredMinutes,
   )
-  const monthlyLunchDeductions = getDailyLunchDeductions(monthlySessions)
+  const monthlyLunchDeductions = getDailyLunchDeductions(monthlySessions, days)
   const annualDays = days.filter((day) => day.date.startsWith(month.slice(0, 4)))
   return {
     workedMinutes: monthlySessions.reduce((total, session) => total + calculateSessionWorkedMinutes(

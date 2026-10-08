@@ -100,7 +100,7 @@ function CalendarDayPanel({
     timeZone: 'UTC',
   }).format(new Date(`${date}T00:00:00Z`))
 
-  const lunchDeductions = getDailyLunchDeductions(sessions)
+  const lunchDeductions = getDailyLunchDeductions(sessions, allLeave)
   const sortedSessions = [...sessions].sort(
     (left, right) =>
       new Date(left.started_at).getTime() - new Date(right.started_at).getTime(),

@@ -63,7 +63,7 @@ function AttendanceCalendar({
     sessionsByDate.set(date, records)
   }
 
-  const lunchDeductions = getDailyLunchDeductions(sessions)
+  const lunchDeductions = getDailyLunchDeductions(sessions, workDays)
 
   const leaveByDate = new Map<string, CalendarLeave[]>()
   for (const record of workDays) {
@@ -143,6 +143,7 @@ function AttendanceCalendar({
                         ? getAutomaticLunchStart(
                             new Date(session.started_at), new Date(session.ended_at),
                             false, lunchDeduction === 'automatic',
+                            workDays,
                           )
                         : null
                       return (

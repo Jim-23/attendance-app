@@ -66,8 +66,8 @@ export function getMonthlyStatistics(
     }
   }
 
-  const completedLunches = getDailyLunchDeductions(completed)
-  const projectedLunches = getDailyLunchDeductions([...completed, ...planned])
+  const completedLunches = getDailyLunchDeductions(completed, leave)
+  const projectedLunches = getDailyLunchDeductions([...completed, ...planned], leave)
   const workedMinutes = completed.reduce(
     (total, session) => total + calculateSessionWorkedMinutes(
       session, completedLunches.get(session) ?? null,

@@ -1,5 +1,5 @@
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
-import { doctorOverlapMinutes, splitDoctorVisit } from './doctor'
+import { doctorOverlapMinutes, isDoctorBoundary, splitDoctorVisit } from './doctor'
 
 const APP_TIMEZONE = 'Europe/Prague'
 const LUNCH_MINUTES = 30
@@ -104,9 +104,24 @@ function getPragueDate(timestamp: string): string {
   return formatInTimeZone(new Date(timestamp), APP_TIMEZONE, 'yyyy-MM-dd')
 }
 
-function exceedsAutomaticLunchThreshold(arrival: Date, departure: Date): boolean {
+function getCountedAttendanceBounds(
+  arrival: Date,
+  departure: Date,
+  workDays: WorkDayForBalance[],
+): { start: Date; end: Date } {
+  // A doctor interruption must not introduce another quarter-hour rounding loss.
+  return {
+    start: isDoctorBoundary(arrival, 'doctor_to', workDays) ? arrival : roundArrival(arrival),
+    end: isDoctorBoundary(departure, 'doctor_from', workDays) ? departure : roundDeparture(departure),
+  }
+}
+
+function exceedsAutomaticLunchThreshold(
+  arrival: Date, departure: Date, workDays: WorkDayForBalance[],
+): boolean {
+  const { start, end } = getCountedAttendanceBounds(arrival, departure, workDays)
   const totalMinutes =
-    (roundDeparture(departure).getTime() - roundArrival(arrival).getTime()) /
+    (end.getTime() - start.getTime()) /
     (1000 * 60)
 
   return totalMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES
@@ -119,6 +134,7 @@ function exceedsAutomaticLunchThreshold(arrival: Date, departure: Date): boolean
  */
 export function getDailyLunchDeductions<T extends LunchSession>(
   sessions: T[],
+  workDays: WorkDayForBalance[] = [],
 ): Map<T, LunchDeduction> {
   const deductions = new Map<T, LunchDeduction>()
   const sessionsByDate = new Map<string, T[]>()
@@ -153,6 +169,7 @@ export function getDailyLunchDeductions<T extends LunchSession>(
         exceedsAutomaticLunchThreshold(
           new Date(session.started_at),
           new Date(session.ended_at),
+          workDays,
         ),
     )
 
@@ -167,11 +184,12 @@ export function getDailyLunchDeductions<T extends LunchSession>(
 export function hasLunchOnDate(
   sessions: LunchSession[],
   date: string,
+  workDays: WorkDayForBalance[] = [],
 ): boolean {
   const daySessions = sessions.filter(
     (session) => getPragueDate(session.started_at) === date,
   )
-  const deductions = getDailyLunchDeductions(daySessions)
+  const deductions = getDailyLunchDeductions(daySessions, workDays)
 
   return [...deductions.values()].some((deduction) => deduction !== null)
 }
@@ -181,20 +199,20 @@ export function getAutomaticLunchStart(
   departure: Date,
   hasLunch: boolean,
   allowAutomaticLunch = true,
+  workDays: WorkDayForBalance[] = [],
 ): Date | null {
   if (hasLunch || !allowAutomaticLunch) {
     return null
   }
 
-  const roundedArrival = roundArrival(arrival)
-  const roundedDeparture = roundDeparture(departure)
+  const { start, end } = getCountedAttendanceBounds(arrival, departure, workDays)
   const totalMinutes =
-    (roundedDeparture.getTime() - roundedArrival.getTime()) /
+    (end.getTime() - start.getTime()) /
     (1000 * 60)
 
   return totalMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES
     ? new Date(
-        roundedArrival.getTime() +
+        start.getTime() +
           AUTOMATIC_LUNCH_AFTER_MINUTES * 60 * 1000,
       )
     : null
@@ -211,13 +229,13 @@ export function calculateWorkedMinutes(
   departure: Date,
   hasLunch: boolean,
   allowAutomaticLunch = true,
+  workDays: WorkDayForBalance[] = [],
 ): number {
-  const roundedArrival = roundArrival(arrival)
-  const roundedDeparture = roundDeparture(departure)
+  const { start, end } = getCountedAttendanceBounds(arrival, departure, workDays)
 
   const totalMinutes =
-    (roundedDeparture.getTime() -
-      roundedArrival.getTime()) /
+    (end.getTime() -
+      start.getTime()) /
     (1000 * 60)
 
   const lunchMinutes =
@@ -238,15 +256,17 @@ export function calculateSessionWorkedMinutes(
 ): number {
   const arrival = new Date(session.started_at)
   const departure = new Date(session.ended_at)
+  const { start, end } = getCountedAttendanceBounds(arrival, departure, workDays)
   const lunchStart = deduction === 'recorded' && session.lunch_started_at
     ? new Date(session.lunch_started_at)
-    : getAutomaticLunchStart(arrival, departure, false, deduction === 'automatic')
+    : getAutomaticLunchStart(arrival, departure, false, deduction === 'automatic', workDays)
   return Math.max(0, calculateWorkedMinutes(
     new Date(session.started_at),
     new Date(session.ended_at),
     deduction === 'recorded',
     deduction === 'automatic',
-  ) - doctorOverlapMinutes(roundArrival(arrival), roundDeparture(departure), workDays, lunchStart))
+    workDays,
+  ) - doctorOverlapMinutes(start, end, workDays, lunchStart))
 }
 
 export function calculateCurrentWorkedMinutes(
@@ -256,12 +276,11 @@ export function calculateCurrentWorkedMinutes(
   workDays: WorkDayForBalance[] = [],
   lunchStartedAt: string | null = null,
 ): number {
-  const roundedArrival = roundArrival(arrival)
-  const roundedNow = roundDeparture(now)
+  const { start, end } = getCountedAttendanceBounds(arrival, now, workDays)
 
   const totalMinutes =
-    (roundedNow.getTime() -
-      roundedArrival.getTime()) /
+    (end.getTime() -
+      start.getTime()) /
     (1000 * 60)
 
   const lunchMinutes = hasLunch ? LUNCH_MINUTES : 0
@@ -269,7 +288,7 @@ export function calculateCurrentWorkedMinutes(
   return Math.max(
     0,
     totalMinutes - lunchMinutes - doctorOverlapMinutes(
-      roundedArrival, roundedNow, workDays,
+      start, end, workDays,
       hasLunch && lunchStartedAt ? new Date(lunchStartedAt) : null,
     ),
   )
@@ -297,13 +316,17 @@ export function calculateShiftEnd(
       (roundedWorkMinutes + lunchMinutes) * 60_000,
   )
   if (workDays.some((day) => day.type === 'doctor')) {
-    end = new Date(roundArrival(arrival).getTime() + roundedWorkMinutes * 60_000)
-    while (calculateSessionWorkedMinutes({
-      started_at: arrival.toISOString(), ended_at: end.toISOString(),
-      lunch_started_at: hasLunch ? lunchStartedAt : null,
-    }, hasLunch ? 'recorded' : allowAutomaticLunch &&
-        (end.getTime() - roundArrival(arrival).getTime()) / 60_000 > AUTOMATIC_LUNCH_AFTER_MINUTES
-        ? 'automatic' : null, workDays) < requiredWorkedMinutes) {
+    const { start } = getCountedAttendanceBounds(arrival, arrival, workDays)
+    end = roundDeparture(new Date(start.getTime() + requiredWorkedMinutes * 60_000))
+    while (calculateSessionWorkedMinutes(
+      {
+        started_at: arrival.toISOString(), ended_at: end.toISOString(),
+        lunch_started_at: hasLunch ? lunchStartedAt : null,
+      },
+      hasLunch ? 'recorded' : allowAutomaticLunch &&
+        exceedsAutomaticLunchThreshold(arrival, end, workDays) ? 'automatic' : null,
+      workDays,
+    ) < requiredWorkedMinutes) {
       end = new Date(end.getTime() + 15 * 60_000)
     }
   }
@@ -381,7 +404,7 @@ export function calculateDailyBalances(
   requiredMinutes = 480,
 ): DailyBalance[] {
   const balances: DailyBalance[] = []
-  const lunchDeductions = getDailyLunchDeductions(sessions)
+  const lunchDeductions = getDailyLunchDeductions(sessions, workDays)
 
   /*
    * Sesbíráme všechny datumy, které mají buď pracovní session,
