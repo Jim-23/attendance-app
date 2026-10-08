@@ -40,6 +40,15 @@ are performed by the app build.
    job failures in Supabase Cron or `cron.job_run_details`; a failing/disabled
    job means unattended completion will not work. Opening the app also finishes
    the logged-in user's due plan, but does not replace Cron.
+   Finally apply
+   [202610080001_doctor_visits.sql](./migrations/202610080001_doctor_visits.sql)
+   before deploying the new frontend. It adds `doctor_from`/`doctor_to` and
+   the `doctor` leave type. Times must be on a single weekday, on whole minutes;
+   duration must match their exact difference. Doctor visits cannot overlap,
+   share the existing 480-minute daily leave cap, and do not consume annual
+   vacation/sick allowances. Normal leave still uses 15-minute increments.
+   Existing history is preserved. Annual accounts reset by year filtering;
+   no deletion, database reset or additional Cron job is needed.
 2. If no existing administrator is present, promote a trusted **existing**
    account through the SQL editor as database owner:
 
@@ -110,10 +119,12 @@ database, then apply these files in order with `psql -v ON_ERROR_STOP=1`:
 3. [migrations/202610060001_one_lunch_per_day.sql](./migrations/202610060001_one_lunch_per_day.sql)
 4. [migrations/202610070001_calendar_editing.sql](./migrations/202610070001_calendar_editing.sql)
 5. [migrations/202610070002_planned_departures.sql](./migrations/202610070002_planned_departures.sql)
-6. [tests/invitations_and_admin.sql](./tests/invitations_and_admin.sql)
-7. [tests/one_lunch_per_day.sql](./tests/one_lunch_per_day.sql)
-8. [tests/calendar_editing.sql](./tests/calendar_editing.sql)
-9. [tests/planned_departures.sql](./tests/planned_departures.sql)
+6. [migrations/202610080001_doctor_visits.sql](./migrations/202610080001_doctor_visits.sql)
+7. [tests/doctor_visits.sql](./tests/doctor_visits.sql)
+8. [tests/invitations_and_admin.sql](./tests/invitations_and_admin.sql)
+9. [tests/one_lunch_per_day.sql](./tests/one_lunch_per_day.sql)
+10. [tests/calendar_editing.sql](./tests/calendar_editing.sql)
+11. [tests/planned_departures.sql](./tests/planned_departures.sql)
 
 The regression suite checks invalid/missing/reused/expired/revoked invitations,
 email binding, ignored role metadata, role and RLS restrictions, last-admin

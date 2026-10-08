@@ -360,7 +360,7 @@ test('company-wide leave shares vacation allowance and credits the day once', ()
   assert.equal(balance.overtimeChangeMinutes, 0)
 })
 
-test('admin statistics separate monthly work, cumulative overtime and annual planned leave', () => {
+test('admin statistics separate monthly work, annual overtime and annual planned leave', () => {
   const stats = getUserStatistics([
     { started_at: '2026-09-30T06:00:00Z', ended_at: '2026-09-30T15:00:00Z', lunch_started_at: null },
     { started_at: '2026-10-01T06:00:00Z', ended_at: '2026-10-01T14:30:00Z', lunch_started_at: null },
@@ -374,6 +374,106 @@ test('admin statistics separate monthly work, cumulative overtime and annual pla
   assert.equal(stats.vacationMinutes, 960)
   assert.equal(stats.monthlySessions.length, 1)
   assert.equal(stats.monthlyDays.length, 2)
+})
+
+const { splitDoctorVisit } = loadModule(resolve('src/lib/doctor.ts'))
+const { calculateSessionWorkedMinutes, calculateAnnualOvertime, calculateCurrentWorkedMinutes } =
+  loadModule(resolve('src/lib/attendance.ts'))
+
+test('doctor visits retain exact minutes and split the paid window at both boundaries', () => {
+  assert.deepEqual(splitDoctorVisit('08:30', '09:23'),
+    { durationMinutes: 53, paidMinutes: 53, overtimeMinutes: 0 })
+  assert.deepEqual(splitDoctorVisit('08:00', '09:23'),
+    { durationMinutes: 83, paidMinutes: 53, overtimeMinutes: 30 })
+  assert.deepEqual(splitDoctorVisit('13:47', '14:40'),
+    { durationMinutes: 53, paidMinutes: 13, overtimeMinutes: 40 })
+  assert.deepEqual(splitDoctorVisit('14:00', '14:53'),
+    { durationMinutes: 53, paidMinutes: 0, overtimeMinutes: 53 })
+  assert.throws(() => splitDoctorVisit('09:00', '08:30'))
+  assert.throws(() => splitDoctorVisit('08:00', '08:00'))
+  assert.throws(() => splitDoctorVisit('24:00', '25:00'))
+})
+
+const doctor = (from, to, date = '2026-10-01') => ({
+  date, type: 'doctor', doctor_from: `${from}:00`, doctor_to: `${to}:00`,
+  duration_minutes: splitDoctorVisit(from, to).durationMinutes,
+})
+const fullShift = {
+  started_at: '2026-10-01T04:00:00Z', ended_at: '2026-10-01T12:30:00Z',
+  lunch_started_at: '2026-10-01T10:00:00Z',
+}
+const octoberNow = new Date('2026-11-01T12:00:00Z')
+
+test('paid doctor time replaces overlapping work without rounding or doubling monthly/export credit', async () => {
+  const records = [doctor('08:30', '09:23')]
+  assert.equal(calculateSessionWorkedMinutes(fullShift, 'recorded', records), 427)
+  const [balance] = calculateDailyBalances([fullShift], records)
+  assert.equal(balance.balanceMinutes, 0)
+  assert.equal(balance.overtimeChangeMinutes, 0)
+  const monthly = getMonthlyStatistics([fullShift], records, '2026-10', octoberNow)
+  assert.equal(monthly.workedMinutes, 427)
+  assert.equal(monthly.creditedLeaveMinutes, 53)
+  const rows = getAttendanceExportRows([fullShift], records, '2026-10', octoberNow)
+  assert.equal(rows[0][3], '8:00')
+  assert.match(rows[0][8], /08:30–09:23; placeno 0:53; z přesčasů 0:00/)
+  assert.match(rows[0][9], /Lékař/)
+  const workbook = await createAttendanceExcel([fullShift], records, '2026-10', octoberNow)
+  const copy = new ExcelJS.Workbook()
+  await copy.xlsx.load(workbook)
+  assert.equal(copy.worksheets[0].getCell('A2').fill.fgColor.argb, `FF${EXPORT_COLOURS.leave}`)
+})
+
+test('mixed doctor visit fulfils the day but consumes only outside-window overtime', () => {
+  const records = [doctor('08:00', '09:23')]
+  const [balance] = calculateDailyBalances([fullShift], records)
+  assert.equal(balance.workedMinutes, 397)
+  assert.equal(balance.creditedMinutes, 53)
+  assert.equal(balance.compTimeMinutes, 30)
+  assert.equal(balance.balanceMinutes, 0)
+  assert.equal(balance.overtimeChangeMinutes, -30)
+  const planned = { ...fullShift, ended_at: null, planned_departure_at: fullShift.ended_at }
+  const stats = getMonthlyStatistics([planned], records, '2026-10', new Date('2026-10-01T07:30:00Z'))
+  assert.equal(stats.workedMinutes, 0)
+  assert.equal(stats.plannedWorkMinutes, 397)
+  assert.equal(calculateShiftEnd(new Date(fullShift.started_at), 397, false, true, records).toISOString(),
+    new Date(fullShift.ended_at).toISOString())
+  assert.equal(calculateCurrentWorkedMinutes(new Date(fullShift.started_at),
+    new Date('2026-10-01T08:00:00Z'), false, records), 157)
+})
+
+test('doctor overlap respects rounded attendance, lunch, multiple sessions and overnight dates', () => {
+  assert.equal(calculateSessionWorkedMinutes(fullShift, 'recorded', [doctor('12:00', '12:53')]), 457)
+  assert.equal(calculateSessionWorkedMinutes({ ...fullShift, lunch_started_at: null },
+    'automatic', [doctor('11:00', '11:53')]), 457)
+  assert.equal(calculateSessionWorkedMinutes(fullShift, 'recorded', [doctor('15:00', '15:53')]), 480)
+  const first = { ...fullShift, ended_at: '2026-10-01T06:00:00Z', lunch_started_at: null }
+  const second = { ...fullShift, started_at: '2026-10-01T07:00:00Z' }
+  const [balance] = calculateDailyBalances([first, second], [doctor('08:00', '09:23')])
+  assert.equal(balance.workedMinutes + balance.creditedMinutes + balance.compTimeMinutes, 480)
+  const rounded = { ...first, started_at: '2026-10-01T04:07:00Z' }
+  assert.equal(calculateSessionWorkedMinutes(rounded, null, [doctor('06:00', '06:20')]), 100)
+  const overnight = { started_at: '2026-10-01T20:00:00Z', ended_at: '2026-10-02T07:00:00Z', lunch_started_at: null }
+  assert.equal(calculateSessionWorkedMinutes(overnight, 'automatic', [doctor('08:00', '08:53', '2026-10-02')]), 577)
+})
+
+test('annual overtime resets at Prague midnight, keeps historical years and has no carry-over', () => {
+  const balances = calculateDailyBalances([
+    { started_at: '2026-12-31T05:00:00Z', ended_at: '2026-12-31T14:00:00Z', lunch_started_at: null },
+    { started_at: '2027-01-04T05:00:00Z', ended_at: '2027-01-04T12:30:00Z', lunch_started_at: null },
+  ], [])
+  assert.equal(calculateAnnualOvertime(balances, new Date('2026-12-31T22:59:00Z')), 30)
+  assert.equal(calculateAnnualOvertime(balances, new Date('2026-12-31T23:00:00Z')), 0)
+  assert.equal(calculateAnnualOvertime(balances, new Date('2027-01-05T12:00:00Z')), -60)
+  assert.equal(calculateAnnualOvertime(balances, new Date('2027-01-05T12:00:00Z'), '2026'), 30)
+  assert.equal(balances.length, 2)
+  const days = [
+    { date: '2026-12-30', type: 'vacation', duration_minutes: 480 },
+    { date: '2026-12-31', type: 'sick_day', duration_minutes: 480 },
+  ]
+  const stats = getUserStatistics([], days, '2027-01', 480, new Date('2027-01-05T12:00:00Z'))
+  assert.equal(stats.vacationMinutes, 0)
+  assert.equal(stats.sickMinutes, 0)
+  assert.equal(stats.overtimeMinutes, 0)
 })
 
 test('invitation states include expiration, revocation and consumption', () => {

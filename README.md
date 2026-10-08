@@ -6,9 +6,26 @@ Annual vacation and sick-day allowances use days as the primary unit (one day
 is eight hours), with hours shown in smaller parentheses, including remaining
 allowances. Admin annual totals use the same format.
 Today's controls and metrics are grouped in one responsive panel. The main
-dashboard always includes the cumulative overtime account from completed
+dashboard always includes the current calendar year's overtime account from completed
 attendance and leave through today, explicitly excluding the running session.
 Compensatory leave is deducted from this account; it is not the monthly Fond balance.
+Vacation (20 days), sick days (5 days), and overtime start fresh every January 1
+in Europe/Prague, without carry-over. No history is deleted. Admin statistics
+show the overtime account for the selected year, through today at most.
+
+**Lékař** in Leave or the calendar day panel records a single weekday's start
+and end in 24-hour time, with exact minutes (no quarter-hour rounding). Minutes
+inside 08:30–14:00 are paid; minutes outside this window fulfil the daily plan
+but debit the annual overtime account, like compensatory leave. For example,
+08:00–09:23 credits 83 minutes: 53 paid and 30 from overtime.
+The visit may overlap attendance; those minutes are removed from counted work
+before crediting the visit. Lunch remains one deduction, and overlapping
+doctor/lunch time is not subtracted from work twice. Doctor visits cannot
+overlap each other and share the existing eight-hour daily leave limit.
+They do not consume vacation or sick-day allowances. Times and the paid/overtime
+split appear in monthly/yearly Excel notes; calendar and leave lists show the
+time interval. Confirmation is delivered to HR outside the app, not uploaded.
+Apply the doctor migration before deploying this version.
 
 The dashboard shows today's date and attendance totals in `Europe/Prague`,
 followed by an editable monthly calendar. Use the header menu to switch to
@@ -117,7 +134,7 @@ hours above the monthly Fond remain visible.
   lunch deduction. Sessions are assigned to their Prague arrival date, as in
   History. Weekend/holiday work still counts as work.
 - **Započtené volno:** vacation (8/4 h), company-wide vacation, sick day, and
-  compensatory leave at their recorded durations on working days through today.
+  compensatory leave and doctor visits at their recorded durations on working days through today.
   Leave on a weekend or holiday cannot fulfil Fond a second time. Leave credits
   are capped at the daily requirement for each date.
 - **Splněno z fondu** and **Zbývá splnit:** completed work plus credited leave and paid holidays

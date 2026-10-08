@@ -14,6 +14,9 @@ import MonthlyStatisticsCards from './MonthlyStatisticsCards'
 import MonthInput from './MonthInput'
 import AttendanceExport from './AttendanceExport'
 import LeaveDuration from './LeaveDuration'
+import DoctorTimeInput, { DoctorVisitDetails } from './DoctorTimeInput'
+import { splitDoctorVisit } from '../lib/doctor'
+import type { UserLeaveType } from '../lib/leave'
 
 import {
     formatTime,
@@ -23,12 +26,11 @@ import {
     parseDateTimeLocal,
 } from '../lib/time'
 import {
-    calculateWorkedMinutes,
     calculateDailyBalances,
     calculateCurrentWorkedMinutes,
     calculateShiftEnd,
     calculateMinutesUntil,
-    calculateRunningOvertime,
+    calculateAnnualOvertime,
     formatDuration,
     getAutomaticLunchStart,
     getDailyLunchDeductions,
@@ -70,7 +72,10 @@ interface WorkDay {
         | 'sick_day'
         | 'comp_time'
         | 'mandatory_vacation'
+        | 'doctor'
     duration_minutes: number
+    doctor_from?: string | null
+    doctor_to?: string | null
     note: string | null
 }
 
@@ -130,11 +135,12 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
     const [statisticsMonth, setStatisticsMonth] = useState(
         () => formatInTimeZone(new Date(), APP_TIMEZONE, 'yyyy-MM'),
     )
-    const [monthlyOvertimeMinutes, setMonthlyOvertimeMinutes] = useState(0)
     const [dailyBalances, setDailyBalances] = useState<
         ReturnType<typeof calculateDailyBalances>
     >([])
-    const [dayType, setDayType] = useState<'vacation' | 'sick_day' | 'comp_time' | 'mandatory_vacation'>('vacation')
+    const [dayType, setDayType] = useState<UserLeaveType>('vacation')
+    const [doctorFrom, setDoctorFrom] = useState('08:30')
+    const [doctorTo, setDoctorTo] = useState('09:23')
     const [dayDuration, setDayDuration] = useState(480)
     const [dayDateFrom, setDayDateFrom] = useState('')
     const [dayDateTo, setDayDateTo] = useState('')
@@ -162,7 +168,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
         while (true) {
             const { data, error } = await supabase
                 .from('work_days')
-                .select('id, date, type, duration_minutes, note')
+                .select('id, date, type, duration_minutes, note, doctor_from, doctor_to')
                 .eq('user_id', userId)
                 .order('date', { ascending: false })
                 .order('id', { ascending: false })
@@ -262,16 +268,13 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
             'yyyy-MM-dd',
         )
 
-        const allWorkDaysToDate: Pick<
-            WorkDay,
-            'date' | 'type' | 'duration_minutes'
-        >[] = []
+        const allWorkDaysToDate: WorkDay[] = []
         offset = 0
 
         while (true) {
             const { data, error } = await supabase
                 .from('work_days')
-                .select('date, type, duration_minutes')
+                .select('id, date, type, duration_minutes, note, doctor_from, doctor_to')
                 .eq('user_id', userId)
                 .lte('date', today)
                 .order('date', { ascending: false })
@@ -317,9 +320,6 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
             allWorkDaysToDate,
         )
         setDailyBalances(dailyBalances)
-        setMonthlyOvertimeMinutes(
-            calculateRunningOvertime(dailyBalances),
-        )
         setHistoryLoaded(true)
     }, [setMessage, userId])
 
@@ -365,6 +365,26 @@ async function addLeaveRecords(input: LeaveInput): Promise<boolean> {
     }
 
     const dateTo = input.dateTo || dayDateFrom
+    if (dayType === 'doctor' && dateTo !== dayDateFrom) {
+        setMessage('Lékaře zadej pro jeden konkrétní den.')
+        return false
+    }
+    let doctorDuration = 0
+    if (dayType === 'doctor') {
+        try {
+            doctorDuration = splitDoctorVisit(input.doctorFrom ?? '', input.doctorTo ?? '').durationMinutes
+        } catch (error) {
+            setMessage(error instanceof Error ? error.message : 'Neplatné časy návštěvy lékaře.')
+            return false
+        }
+        if (workDays.some((day) => day.type === 'doctor' && day.date === dayDateFrom &&
+            day.doctor_from && day.doctor_to &&
+            day.doctor_from.slice(0, 5) < (input.doctorTo ?? '') &&
+            (input.doctorFrom ?? '') < day.doctor_to.slice(0, 5))) {
+            setMessage('Návštěva lékaře se překrývá s jinou návštěvou.')
+            return false
+        }
+    }
 
     if (dayType === 'mandatory_vacation' && dateTo !== dayDateFrom) {
         setMessage('Celozávodní dovolenou zadej pro jeden konkrétní den.')
@@ -376,7 +396,7 @@ async function addLeaveRecords(input: LeaveInput): Promise<boolean> {
         return false
     }
 
-    const duration =
+    const duration = dayType === 'doctor' ? doctorDuration :
         dayType === 'mandatory_vacation' || dayType === 'sick_day'
             ? 480
             : input.durationMinutes
@@ -529,6 +549,8 @@ async function addLeaveRecords(input: LeaveInput): Promise<boolean> {
         type: dayType,
         duration_minutes: duration,
         note: dayNote || null,
+        doctor_from: dayType === 'doctor' ? input.doctorFrom : null,
+        doctor_to: dayType === 'doctor' ? input.doctorTo : null,
     }))
 
     const { error } = await supabase
@@ -570,6 +592,8 @@ async function handleAddDayRecord() {
                 ? compHours * 60 + compMinutes
                 : dayDuration,
         note: dayNote,
+        doctorFrom,
+        doctorTo,
     })
 
     if (saved) {
@@ -1087,6 +1111,7 @@ const todayDate = formatInTimeZone(
     APP_TIMEZONE,
     'yyyy-MM-dd',
 )
+const monthlyOvertimeMinutes = calculateAnnualOvertime(dailyBalances, now)
 const monthlyStatistics = getMonthlyStatistics(
     workSession ? [...history, workSession] : history,
     workDays,
@@ -1148,6 +1173,7 @@ const todayCompletedWorkedMinutes =
             calculateSessionWorkedMinutes(
                 session,
                 todayLunchDeductions.get(session) ?? null,
+                workDays,
             ),
         0,
     )
@@ -1158,6 +1184,8 @@ const todayCurrentWorkedMinutes =
               new Date(openSessionToday.started_at),
               now,
               todayLunchDeductions.get(openSessionToday) === 'recorded',
+              workDays,
+              openSessionToday.lunch_started_at,
           )
         : 0
 
@@ -1197,6 +1225,8 @@ const shiftEnd = openSessionToday
           !todayCompletedSessions.some(
               (session) => todayLunchDeductions.get(session) !== null,
           ),
+          workDays,
+          openSessionToday.lunch_started_at,
       )
     : null
 const shiftRemainingMinutes = shiftEnd ? calculateMinutesUntil(shiftEnd, now) : 0
@@ -1228,16 +1258,16 @@ const todayBalanceMinutes =
     todayDailyBalance?.balanceMinutes ??
     (
         workSession?.ended_at
-            ? calculateWorkedMinutes(
-                  new Date(workSession.started_at),
-                  new Date(workSession.ended_at),
-                  workSession.lunch_started_at !== null,
+            ? calculateSessionWorkedMinutes(
+                  { ...workSession, ended_at: workSession.ended_at },
+                  workSession.lunch_started_at ? 'recorded' : 'automatic',
+                  workDays,
               ) - 480
             : 0
     )
 
 const currentYear = formatInTimeZone(
-    new Date(),
+    now,
     APP_TIMEZONE,
     'yyyy',
 )
@@ -1453,15 +1483,10 @@ return (
 
                                             <strong className="info-value">
                                                 {formatDuration(
-                                                    calculateWorkedMinutes(
-                                                        new Date(
-                                                            workSession.started_at,
-                                                        ),
-                                                        new Date(
-                                                            workSession.ended_at,
-                                                        ),
-                                                        workSession.lunch_started_at !==
-                                                            null,
+                                                    calculateSessionWorkedMinutes(
+                                                        { ...workSession, ended_at: workSession.ended_at },
+                                                        todayLunchDeductions.get(workSession) ?? null,
+                                                        workDays,
                                                     ),
                                                 )}
                                             </strong>
@@ -1590,7 +1615,7 @@ return (
                         </div>
                     )}
                     <div className="stat-card overtime-summary">
-                        <span className="stat-label">Přesčasový účet</span>
+                        <span className="stat-label">Přesčasový účet {currentYear}</span>
                         <strong className={`stat-value ${
                             monthlyOvertimeMinutes > 0 ? 'positive' : monthlyOvertimeMinutes < 0 ? 'negative' : ''
                         }`}>
@@ -1598,7 +1623,8 @@ return (
                         </strong>
                         <span className="stat-description">
                             Průběžný zůstatek z uzavřené docházky a volna do dneška.
-                            Náhradní volno se z účtu odečítá.
+                            Náhradní volno a lékař mimo 08:30–14:00 se z účtu odečítají.
+                            Každý rok začíná od nuly.
                         </span>
                     </div>
                 </div>
@@ -1622,6 +1648,7 @@ return (
                             formatInTimeZone(new Date(session.started_at), APP_TIMEZONE, 'yyyy-MM-dd') === selectedDate,
                     )}
                     leave={workDays.filter((day) => day.date === selectedDate)}
+                    allLeave={workDays}
                     busy={actionLoading}
                     message={renderMessage()}
                     onClose={() => {
@@ -1660,7 +1687,7 @@ return (
                 <div className="stats-grid">
                     <div className="stat-card">
                         <span className="stat-label">
-                            Přesčasový účet k dnešnímu dni
+                            Přesčasový účet {currentYear} k dnešnímu dni
                         </span>
 
                         <strong
@@ -1718,6 +1745,7 @@ return (
                                         calculateSessionWorkedMinutes(
                                             session,
                                             lunchDeduction,
+                                            workDays,
                                         )
                                     const automaticLunchStart =
                                         getAutomaticLunchStart(
@@ -1973,11 +2001,12 @@ return (
                                 id="day-date-from"
                                 type="date"
                                 value={dayDateFrom}
-                                onChange={(event) =>
-                                    setDayDateFrom(
-                                        event.target.value,
-                                    )
-                                }
+                                onChange={(event) => {
+                                    setDayDateFrom(event.target.value)
+                                    if (dayType === 'doctor' || dayType === 'mandatory_vacation') {
+                                        setDayDateTo(event.target.value)
+                                    }
+                                }}
                             />
                         </div>
 
@@ -1991,7 +2020,7 @@ return (
                                 type="date"
                                 value={dayDateTo}
                                 min={dayDateFrom}
-                                disabled={dayType === 'mandatory_vacation'}
+                                disabled={dayType === 'mandatory_vacation' || dayType === 'doctor'}
                                 onChange={(event) =>
                                     setDayDateTo(
                                         event.target.value,
@@ -2009,16 +2038,10 @@ return (
                                 id="day-type"
                                 value={dayType}
                                 onChange={(event) => {
-                                    if (event.target.value === 'mandatory_vacation') {
+                                    if (event.target.value === 'mandatory_vacation' || event.target.value === 'doctor') {
                                         setDayDateTo('')
                                     }
-                                    setDayType(
-                                        event.target.value as
-                                            | 'vacation'
-                                            | 'sick_day'
-                                            | 'comp_time'
-                                            | 'mandatory_vacation',
-                                    )
+                                    setDayType(event.target.value as UserLeaveType)
                                 }}
                             >
                                 <option value="vacation">
@@ -2035,6 +2058,7 @@ return (
                                 <option value="mandatory_vacation">
                                     Celozávodní dovolená
                                 </option>
+                                <option value="doctor">Lékař</option>
                             </select>
                         </div>
                         <p className="calendar-note form-field-wide">
@@ -2042,6 +2066,10 @@ return (
                             Odečítá se ze společného ročního limitu dovolené.
                         </p>
 
+                        {dayType === 'doctor' && (
+                            <DoctorTimeInput id="doctor" from={doctorFrom} to={doctorTo}
+                                onFrom={setDoctorFrom} onTo={setDoctorTo} disabled={actionLoading} />
+                        )}
                         {dayType === 'vacation' && (
                             <div className="form-field">
                                 <label htmlFor="day-duration">
@@ -2214,6 +2242,8 @@ return (
                                                 day.duration_minutes,
                                                 false,
                                             )}
+                                            {day.doctor_from && day.doctor_to &&
+                                                <DoctorVisitDetails from={day.doctor_from} to={day.doctor_to} />}
                                         </td>
 
                                         <td>

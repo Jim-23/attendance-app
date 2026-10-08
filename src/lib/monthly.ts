@@ -71,11 +71,13 @@ export function getMonthlyStatistics(
   const workedMinutes = completed.reduce(
     (total, session) => total + calculateSessionWorkedMinutes(
       session, completedLunches.get(session) ?? null,
+      leave,
     ), 0,
   )
   const projectedWorkedMinutes = [...completed, ...planned].reduce(
     (total, session) => total + calculateSessionWorkedMinutes(
       session, projectedLunches.get(session) ?? null,
+      leave,
     ), 0,
   )
 

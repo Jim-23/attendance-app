@@ -46,7 +46,7 @@ export async function createAttendanceExcel(
       row.alignment = { vertical: 'top', wrapText: true }
       const statuses = values[9].split(' · ')
       const colour = statuses.includes('Svátek') ? EXPORT_COLOURS.holiday
-        : statuses.some((status) => ['Dovolená', 'Sick day', 'Náhradní volno', 'Celozávodní dovolená'].includes(status))
+        : statuses.some((status) => ['Dovolená', 'Sick day', 'Náhradní volno', 'Celozávodní dovolená', 'Lékař'].includes(status))
           ? EXPORT_COLOURS.leave
           : statuses.includes('Víkend') ? EXPORT_COLOURS.weekend : null
       if (colour) row.eachCell((cell) => fill(cell, colour))
@@ -71,7 +71,7 @@ export async function createAttendanceExcel(
   legend.columns = [{ header: 'Označení', width: 30 }, { header: 'Význam', width: 95 }]
   const entries: [string, string, string][] = [
     ['Svátek', 'Placený svátek; ve všední den započten do fondu. O víkendu bez dalších hodin.', EXPORT_COLOURS.holiday],
-    ['Volno', 'Dovolená, sick day, náhradní nebo celozávodní volno.', EXPORT_COLOURS.leave],
+    ['Volno', 'Dovolená, sick day, náhradní nebo celozávodní volno, lékař. Lékař 08:30–14:00 placený, mimo toto okno čerpá přesčasy.', EXPORT_COLOURS.leave],
     ['Nad denní plán', 'Kladná denní bilance. Není to zůstatek přesčasového účtu.', EXPORT_COLOURS.extra],
     ['Chybí hodiny', 'Záporná bilance minulého dne, včetně dnů bez záznamu.', EXPORT_COLOURS.missing],
     ['Neukončeno / probíhá', 'Otevřená docházka nebo dosud nesplněný dnešní den. Nejde o uzavřený nedostatek.', EXPORT_COLOURS.pending],

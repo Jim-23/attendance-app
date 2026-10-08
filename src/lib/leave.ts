@@ -14,6 +14,7 @@ export const leaveLabels: Record<LeaveType, string> = {
   sick_day: 'Sick day',
   comp_time: 'Náhradní volno',
   mandatory_vacation: 'Celozávodní dovolená',
+  doctor: 'Lékař',
 }
 
 export function usesVacationAllowance(type: LeaveType): boolean {
@@ -35,4 +36,6 @@ export interface LeaveInput {
   dateTo: string
   durationMinutes: number
   note: string
+  doctorFrom?: string
+  doctorTo?: string
 }

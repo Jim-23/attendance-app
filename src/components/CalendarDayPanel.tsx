@@ -12,6 +12,7 @@ import { leaveLabels } from '../lib/leave'
 import type { LeaveInput, UserLeaveType } from '../lib/leave'
 import type { SessionChange } from '../lib/sessions'
 import { APP_TIMEZONE, formatTime, parseDateTimeLocal } from '../lib/time'
+import DoctorTimeInput, { DoctorVisitDetails } from './DoctorTimeInput'
 
 interface PanelSession {
   id: number
@@ -26,6 +27,8 @@ interface PanelLeave {
   type: 'holiday' | UserLeaveType
   duration_minutes: number
   note: string | null
+  doctor_from?: string | null
+  doctor_to?: string | null
 }
 
 interface CalendarDayPanelProps {
@@ -34,6 +37,7 @@ interface CalendarDayPanelProps {
   holiday?: string
   sessions: PanelSession[]
   leave: PanelLeave[]
+  allLeave: PanelLeave[]
   busy: boolean
   message: ReactNode
   onClose: () => void
@@ -57,6 +61,7 @@ function CalendarDayPanel({
   holiday,
   sessions,
   leave,
+  allLeave,
   busy,
   message,
   onClose,
@@ -74,6 +79,8 @@ function CalendarDayPanel({
   const [compHours, setCompHours] = useState(0)
   const [compMinutes, setCompMinutes] = useState(15)
   const [leaveNote, setLeaveNote] = useState('')
+  const [doctorFrom, setDoctorFrom] = useState('08:30')
+  const [doctorTo, setDoctorTo] = useState('09:23')
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -143,6 +150,8 @@ function CalendarDayPanel({
             ? leaveDuration
             : 480,
       note: leaveNote,
+      doctorFrom,
+      doctorTo,
     })
 
     if (saved) {
@@ -240,11 +249,14 @@ function CalendarDayPanel({
               ? calculateSessionWorkedMinutes(
                   { ...session, ended_at: session.ended_at },
                   deduction,
+                  allLeave,
                 )
               : calculateCurrentWorkedMinutes(
                   new Date(session.started_at),
                   new Date(),
                   session.lunch_started_at !== null,
+                  allLeave,
+                  session.lunch_started_at,
                 )
 
             return (
@@ -324,6 +336,8 @@ function CalendarDayPanel({
                   {formatDuration(record.duration_minutes, false)}
                   {record.note && ` · ${record.note}`}
                 </span>
+                {record.doctor_from && record.doctor_to &&
+                  <DoctorVisitDetails from={record.doctor_from} to={record.doctor_to} />}
               </div>
               <button
                 type="button"
@@ -352,8 +366,13 @@ function CalendarDayPanel({
                 <option value="sick_day">{leaveLabels.sick_day}</option>
                 <option value="comp_time">{leaveLabels.comp_time}</option>
                 <option value="mandatory_vacation">{leaveLabels.mandatory_vacation}</option>
+                <option value="doctor">{leaveLabels.doctor}</option>
               </select>
             </div>
+            {leaveType === 'doctor' && (
+              <DoctorTimeInput id="panel-doctor" from={doctorFrom} to={doctorTo}
+                onFrom={setDoctorFrom} onTo={setDoctorTo} disabled={busy} />
+            )}
             {leaveType === 'vacation' && (
               <div className="form-field">
                 <label htmlFor="day-panel-leave-duration">Délka</label>

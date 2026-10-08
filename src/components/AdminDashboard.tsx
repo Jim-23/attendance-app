@@ -114,7 +114,7 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
       }
       for (let offset = 0; ; ) {
         const { data, error } = await supabase.from('work_days')
-          .select('date, type, duration_minutes, note').eq('user_id', selectedId)
+          .select('date, type, duration_minutes, note, doctor_from, doctor_to').eq('user_id', selectedId)
           .order('date').order('id').range(offset, offset + 999)
         if (!active) return
         if (error) {
@@ -266,7 +266,7 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
                     )}
                     {monthlyStats && <MonthlyStatisticsCards statistics={monthlyStats} />}
                     <div className="stats-grid">
-                      <div className="stat-card"><span className="stat-label">Přesčasový účet k dnešku</span>
+                      <div className="stat-card"><span className="stat-label">Přesčasový účet {month.slice(0, 4)} k dnešku</span>
                         <strong className="stat-value">{formatDuration(stats.overtimeMinutes)}</strong></div>
                       <div className="stat-card"><span className="stat-label">Dovolená v roce {month.slice(0, 4)} (včetně celozávodní)</span>
                         <strong className="stat-value"><LeaveDuration minutes={stats.vacationMinutes} /></strong></div>

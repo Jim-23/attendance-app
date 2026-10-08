@@ -5,6 +5,7 @@ import { getMonthlyCalendarCredits } from './monthly'
 import type { MonthlySession } from './monthly'
 import { leaveLabels } from './leave'
 import { APP_TIMEZONE } from './time'
+import { splitDoctorVisit } from './doctor'
 
 const WEEKDAYS = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So']
 export const EXPORT_HEADERS = [
@@ -57,7 +58,7 @@ export function getAttendanceExportRows(
     const daySessions = completed.filter((session) => localDate(session.started_at) === day.date)
       .sort((left, right) => new Date(left.started_at).getTime() - new Date(right.started_at).getTime())
     const worked = daySessions.reduce(
-      (total, session) => total + calculateSessionWorkedMinutes(session, deductions.get(session) ?? null), 0,
+      (total, session) => total + calculateSessionWorkedMinutes(session, deductions.get(session) ?? null, leave), 0,
     )
     const credited = worked + (day.date <= today ? day.leaveMinutes + day.holidayMinutes : 0)
     const lunch = daySessions.some((session) => deductions.get(session) != null) ? 30 : 0
@@ -69,6 +70,10 @@ export function getAttendanceExportRows(
     for (const record of leave.filter((record) => record.date === day.date && record.type !== 'holiday')) {
       if (!statuses.includes(leaveLabels[record.type])) statuses.push(leaveLabels[record.type])
       notes.push(`${leaveLabels[record.type]} ${duration(record.duration_minutes)}${record.note ? `: ${record.note}` : ''}`)
+      if (record.type === 'doctor' && record.doctor_from && record.doctor_to) {
+        const split = splitDoctorVisit(record.doctor_from.slice(0, 5), record.doctor_to.slice(0, 5))
+        notes.push(`${record.doctor_from.slice(0, 5)}–${record.doctor_to.slice(0, 5)}; placeno ${duration(split.paidMinutes)}; z přesčasů ${duration(split.overtimeMinutes)}`)
+      }
     }
     if (day.date > today && (day.leaveMinutes > 0 || day.holidayMinutes > 0)) {
       notes.push('Plánované volno / svátek – dosud nezapočteno')

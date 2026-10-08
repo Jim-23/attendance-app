@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { formatInTimeZone } from 'date-fns-tz'
 import {
-  calculateWorkedMinutes,
+  calculateSessionWorkedMinutes,
   formatDuration,
   getAutomaticLunchStart,
   getDailyLunchDeductions,
@@ -9,6 +9,7 @@ import {
 import { APP_TIMEZONE, formatTime } from '../lib/time'
 import { getCzechHolidays, getMonthDays, shiftMonth } from '../lib/calendar'
 import { leaveLabels } from '../lib/leave'
+import { DoctorVisitDetails } from './DoctorTimeInput'
 
 interface CalendarSession {
   id: number
@@ -20,9 +21,11 @@ interface CalendarSession {
 interface CalendarLeave {
   id: number
   date: string
-  type: 'holiday' | 'vacation' | 'sick_day' | 'comp_time' | 'mandatory_vacation'
+  type: 'holiday' | 'vacation' | 'sick_day' | 'comp_time' | 'mandatory_vacation' | 'doctor'
   duration_minutes: number
   note: string | null
+  doctor_from?: string | null
+  doctor_to?: string | null
 }
 
 interface AttendanceCalendarProps {
@@ -147,9 +150,8 @@ function AttendanceCalendar({
                         {formatTime(session.started_at)} – {session.ended_at
                           ? formatTime(session.ended_at) : 'probíhá'}
                         {session.ended_at && (
-                          <span>{formatDuration(calculateWorkedMinutes(
-                            new Date(session.started_at), new Date(session.ended_at),
-                            lunchDeduction === 'recorded', lunchDeduction === 'automatic',
+                          <span>{formatDuration(calculateSessionWorkedMinutes(
+                            { ...session, ended_at: session.ended_at }, lunchDeduction, workDays,
                           ), false)}</span>
                         )}
                         {session.lunch_started_at
@@ -165,6 +167,9 @@ function AttendanceCalendar({
                       <p key={record.id} className="calendar-event calendar-leave" title={record.note ?? undefined}>
                         {leaveLabels[record.type]}
                         <span>{formatDuration(record.duration_minutes, false)}</span>
+                        {record.doctor_from && record.doctor_to && (
+                          <DoctorVisitDetails from={record.doctor_from} to={record.doctor_to} />
+                        )}
                         {record.note && <span>{record.note}</span>}
                       </p>
                     ))}

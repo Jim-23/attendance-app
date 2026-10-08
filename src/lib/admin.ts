@@ -1,6 +1,6 @@
 import {
   calculateDailyBalances,
-  calculateRunningOvertime,
+  calculateAnnualOvertime,
   calculateSessionWorkedMinutes,
   getDailyLunchDeductions,
 } from './attendance'
@@ -77,8 +77,9 @@ export function getUserStatistics(
   return {
     workedMinutes: monthlySessions.reduce((total, session) => total + calculateSessionWorkedMinutes(
       session, monthlyLunchDeductions.get(session) ?? null,
+      days,
     ), 0),
-    overtimeMinutes: calculateRunningOvertime(balances),
+    overtimeMinutes: calculateAnnualOvertime(balances, now, month.slice(0, 4)),
     vacationMinutes: getVacationUsedMinutes(annualDays),
     sickMinutes: annualDays.filter((day) => day.type === 'sick_day')
       .reduce((total, day) => total + day.duration_minutes, 0),

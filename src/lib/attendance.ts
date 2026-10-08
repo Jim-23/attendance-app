@@ -1,4 +1,5 @@
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { doctorOverlapMinutes, splitDoctorVisit } from './doctor'
 
 const APP_TIMEZONE = 'Europe/Prague'
 const LUNCH_MINUTES = 30
@@ -18,7 +19,10 @@ export interface WorkDayForBalance {
     | 'sick_day'
     | 'comp_time'
     | 'mandatory_vacation'
+    | 'doctor'
   duration_minutes: number
+  doctor_from?: string | null
+  doctor_to?: string | null
 }
 
 export interface DailyBalance {
@@ -230,19 +234,27 @@ export function calculateWorkedMinutes(
 export function calculateSessionWorkedMinutes(
   session: WorkSessionForBalance,
   deduction: LunchDeduction,
+  workDays: WorkDayForBalance[] = [],
 ): number {
-  return calculateWorkedMinutes(
+  const arrival = new Date(session.started_at)
+  const departure = new Date(session.ended_at)
+  const lunchStart = deduction === 'recorded' && session.lunch_started_at
+    ? new Date(session.lunch_started_at)
+    : getAutomaticLunchStart(arrival, departure, false, deduction === 'automatic')
+  return Math.max(0, calculateWorkedMinutes(
     new Date(session.started_at),
     new Date(session.ended_at),
     deduction === 'recorded',
     deduction === 'automatic',
-  )
+  ) - doctorOverlapMinutes(roundArrival(arrival), roundDeparture(departure), workDays, lunchStart))
 }
 
 export function calculateCurrentWorkedMinutes(
   arrival: Date,
   now: Date,
   hasLunch: boolean,
+  workDays: WorkDayForBalance[] = [],
+  lunchStartedAt: string | null = null,
 ): number {
   const roundedArrival = roundArrival(arrival)
   const roundedNow = roundDeparture(now)
@@ -256,7 +268,10 @@ export function calculateCurrentWorkedMinutes(
 
   return Math.max(
     0,
-    totalMinutes - lunchMinutes,
+    totalMinutes - lunchMinutes - doctorOverlapMinutes(
+      roundedArrival, roundedNow, workDays,
+      hasLunch && lunchStartedAt ? new Date(lunchStartedAt) : null,
+    ),
   )
 }
 
@@ -265,6 +280,8 @@ export function calculateShiftEnd(
   requiredWorkedMinutes: number,
   hasLunch: boolean,
   allowAutomaticLunch = true,
+  workDays: WorkDayForBalance[] = [],
+  lunchStartedAt: string | null = null,
 ): Date {
   if (requiredWorkedMinutes <= 0) return arrival
 
@@ -275,10 +292,22 @@ export function calculateShiftEnd(
       ? LUNCH_MINUTES
       : 0
 
-  return new Date(
+  let end = new Date(
     roundArrival(arrival).getTime() +
       (roundedWorkMinutes + lunchMinutes) * 60_000,
   )
+  if (workDays.some((day) => day.type === 'doctor')) {
+    end = new Date(roundArrival(arrival).getTime() + roundedWorkMinutes * 60_000)
+    while (calculateSessionWorkedMinutes({
+      started_at: arrival.toISOString(), ended_at: end.toISOString(),
+      lunch_started_at: hasLunch ? lunchStartedAt : null,
+    }, hasLunch ? 'recorded' : allowAutomaticLunch &&
+        (end.getTime() - roundArrival(arrival).getTime()) / 60_000 > AUTOMATIC_LUNCH_AFTER_MINUTES
+        ? 'automatic' : null, workDays) < requiredWorkedMinutes) {
+      end = new Date(end.getTime() + 15 * 60_000)
+    }
+  }
+  return end
 }
 
 export function calculateMinutesUntil(end: Date, now: Date): number {
@@ -403,6 +432,7 @@ export function calculateDailyBalances(
           calculateSessionWorkedMinutes(
             session,
             lunchDeductions.get(session) ?? null,
+            workDays,
           )
         )
       },
@@ -416,7 +446,9 @@ export function calculateDailyBalances(
       .filter((day) => day.type !== 'comp_time')
       .reduce(
         (total, day) =>
-          total + day.duration_minutes,
+          total + (day.type === 'doctor' && day.doctor_from && day.doctor_to
+            ? splitDoctorVisit(day.doctor_from.slice(0, 5), day.doctor_to.slice(0, 5)).paidMinutes
+            : day.duration_minutes),
         0,
       )
 
@@ -430,6 +462,10 @@ export function calculateDailyBalances(
           total + day.duration_minutes,
         0,
       )
+      + dayWorkDays.reduce((total, day) => total + (
+        day.type === 'doctor' && day.doctor_from && day.doctor_to
+          ? splitDoctorVisit(day.doctor_from.slice(0, 5), day.doctor_to.slice(0, 5)).overtimeMinutes : 0
+      ), 0)
 
     const balanceMinutes = calculateDailyBalance(
       workedMinutes,
@@ -471,6 +507,16 @@ export function calculateRunningOvertime(
       total + day.overtimeChangeMinutes,
     0,
   )
+}
+
+export function calculateAnnualOvertime(
+  dailyBalances: DailyBalance[], now: Date,
+  year = formatInTimeZone(now, APP_TIMEZONE, 'yyyy'),
+): number {
+  const today = formatInTimeZone(now, APP_TIMEZONE, 'yyyy-MM-dd')
+  return calculateRunningOvertime(dailyBalances.filter(
+    (day) => day.date.slice(0, 4) === year && day.date <= today,
+  ))
 }
 
 /**
