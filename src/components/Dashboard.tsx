@@ -1735,7 +1735,6 @@ return (
                 <div className="section-heading">
                     <div>
                         <p className="section-eyebrow">PŘEHLED ZÁZNAMŮ</p>
-                        <h2>Historie</h2>
                     </div>
                 </div>
 
@@ -1967,16 +1966,8 @@ return (
             {/* ==================== SAVED TIME OFF ==================== */}
             {view === 'leave' && (
             <section className="dashboard-section">
-                <div className="section-heading">
-                    <div>
-                        <p className="section-eyebrow">
-                            PŘEHLED
-                        </p>
-                        <h2>Volno</h2>
-                    </div>
-                </div>
                 <p className="section-label">
-                  Volno tento rok
+                Zbývající volno
                 </p>
                 <div className="stats-grid">
                         <div className="stat-card">
@@ -1985,12 +1976,12 @@ return (
                             </span>
 
                             <strong className="stat-value">
-                                <LeaveDuration minutes={vacationUsedMinutes} />
+                                <LeaveDuration minutes={vacationRemainingMinutes} />
                             </strong>
 
                             <span className="stat-description">
-                                zbývá{' '}
-                                <LeaveDuration minutes={vacationRemainingMinutes} />
+                                čerpáno{' '}
+                                <LeaveDuration minutes={vacationUsedMinutes} />
                             </span>
                         </div>
 
@@ -2000,12 +1991,12 @@ return (
                             </span>
 
                             <strong className="stat-value">
-                                <LeaveDuration minutes={sickDayUsedMinutes} />
+                                <LeaveDuration minutes={sickDayRemainingMinutes} />
                             </strong>
 
                             <span className="stat-description">
-                                zbývá{' '}
-                                <LeaveDuration minutes={sickDayRemainingMinutes} />
+                                čérpáno{' '}
+                                <LeaveDuration minutes={sickDayUsedMinutes} />
                             </span>
                         </div>
                 </div>
