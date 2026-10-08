@@ -2,6 +2,14 @@
 
 ## Dashboard and calendar
 
+Annual vacation and sick-day allowances use days as the primary unit (one day
+is eight hours), with hours shown in smaller parentheses, including remaining
+allowances. Admin annual totals use the same format.
+Today's controls and metrics are grouped in one responsive panel. The main
+dashboard always includes the cumulative overtime account from completed
+attendance and leave through today, explicitly excluding the running session.
+Compensatory leave is deducted from this account; it is not the monthly Fond balance.
+
 The dashboard shows today's date and attendance totals in `Europe/Prague`,
 followed by an editable monthly calendar. Use the header menu to switch to
 History (including session corrections), Leave, or Statistics; **Odhlásit** is

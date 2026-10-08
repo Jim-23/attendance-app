@@ -14,6 +14,7 @@ import type { MonthlySession } from '../lib/monthly'
 import MonthlyStatisticsCards from './MonthlyStatisticsCards'
 import MonthInput from './MonthInput'
 import AttendanceExport from './AttendanceExport'
+import LeaveDuration from './LeaveDuration'
 
 interface AdminDashboardProps {
   onBack: () => void
@@ -268,9 +269,9 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
                       <div className="stat-card"><span className="stat-label">Přesčasový účet k dnešku</span>
                         <strong className="stat-value">{formatDuration(stats.overtimeMinutes)}</strong></div>
                       <div className="stat-card"><span className="stat-label">Dovolená v roce {month.slice(0, 4)} (včetně celozávodní)</span>
-                        <strong className="stat-value">{formatDuration(stats.vacationMinutes, false)}</strong></div>
+                        <strong className="stat-value"><LeaveDuration minutes={stats.vacationMinutes} /></strong></div>
                       <div className="stat-card"><span className="stat-label">Sick days v roce {month.slice(0, 4)}</span>
-                        <strong className="stat-value">{formatDuration(stats.sickMinutes, false)}</strong></div>
+                        <strong className="stat-value"><LeaveDuration minutes={stats.sickMinutes} /></strong></div>
                     </div>
                     {attendance?.openSession && <p>Otevřená docházka od {formatDate(attendance.openSession)} {formatTime(attendance.openSession)}.</p>}
                     <p className="calendar-note">

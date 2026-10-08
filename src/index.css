@@ -596,6 +596,43 @@ button:disabled {
     gap: 10px;
 }
 
+.today-card .today-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.today-card .today-summary {
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--color-border);
+}
+
+.today-summary .stat-card {
+    box-shadow: none;
+    background: var(--color-surface-secondary);
+}
+
+.today-summary .overtime-summary {
+    border-left: 3px solid var(--color-primary);
+}
+
+.leave-duration {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.leave-duration small {
+    font-size: 0.6em;
+    font-weight: 400;
+    color: var(--color-text-muted);
+}
+
+.stat-description .leave-duration small {
+    font-size: 0.9em;
+}
+
 .info-card {
     padding: 14px;
 

@@ -21,7 +21,15 @@ function loadModule(path) {
   return mod.exports
 }
 
-const { getVacationUsedMinutes, leaveLabels } = loadModule(resolve('src/lib/leave.ts'))
+const { getVacationUsedMinutes, leaveLabels, formatLeaveDays } = loadModule(resolve('src/lib/leave.ts'))
+test('leave allowance uses Czech day counts with eight-hour days', () => {
+  assert.equal(formatLeaveDays(0), '0 dní')
+  assert.equal(formatLeaveDays(480), '1 den')
+  assert.equal(formatLeaveDays(960), '2 dny')
+  assert.equal(formatLeaveDays(1440), '3 dny')
+  assert.equal(formatLeaveDays(240), '0,5 dní')
+  assert.equal(formatLeaveDays(2400), '5 dní')
+})
 const { getUserStatistics, getInvitationStatus, isAdminUser } = loadModule(resolve('src/lib/admin.ts'))
 const { calculateDailyBalances, getDailyLunchDeductions, hasLunchOnDate } = loadModule(resolve('src/lib/attendance.ts'))
 const { calculateShiftEnd, calculateMinutesUntil, calculateWorkedMinutes } = loadModule(resolve('src/lib/attendance.ts'))

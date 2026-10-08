@@ -13,6 +13,7 @@ import { getMonthlyStatistics } from '../lib/monthly'
 import MonthlyStatisticsCards from './MonthlyStatisticsCards'
 import MonthInput from './MonthInput'
 import AttendanceExport from './AttendanceExport'
+import LeaveDuration from './LeaveDuration'
 
 import {
     formatTime,
@@ -1558,7 +1559,6 @@ return (
                             )}
                         </div>
                     )}
-                </div>
                 <div className="stats-grid today-summary">
                     <div className="stat-card">
                         <span className="stat-label">Odpracováno dnes</span>
@@ -1589,6 +1589,19 @@ return (
                             </span>
                         </div>
                     )}
+                    <div className="stat-card overtime-summary">
+                        <span className="stat-label">Přesčasový účet</span>
+                        <strong className={`stat-value ${
+                            monthlyOvertimeMinutes > 0 ? 'positive' : monthlyOvertimeMinutes < 0 ? 'negative' : ''
+                        }`}>
+                            {historyLoaded ? formatDuration(monthlyOvertimeMinutes) : 'Načítám...'}
+                        </strong>
+                        <span className="stat-description">
+                            Průběžný zůstatek z uzavřené docházky a volna do dneška.
+                            Náhradní volno se z účtu odečítá.
+                        </span>
+                    </div>
+                </div>
                 </div>
             </section>
             <AttendanceCalendar
@@ -1922,18 +1935,12 @@ return (
                             </span>
 
                             <strong className="stat-value">
-                                {formatDuration(
-                                    vacationUsedMinutes,
-                                    false,
-                                )}
+                                <LeaveDuration minutes={vacationUsedMinutes} />
                             </strong>
 
                             <span className="stat-description">
                                 zbývá{' '}
-                                {formatDuration(
-                                    vacationRemainingMinutes,
-                                    false,
-                                )}
+                                <LeaveDuration minutes={vacationRemainingMinutes} />
                             </span>
                         </div>
 
@@ -1943,18 +1950,12 @@ return (
                             </span>
 
                             <strong className="stat-value">
-                                {formatDuration(
-                                    sickDayUsedMinutes,
-                                    false,
-                                )}
+                                <LeaveDuration minutes={sickDayUsedMinutes} />
                             </strong>
 
                             <span className="stat-description">
                                 zbývá{' '}
-                                {formatDuration(
-                                    sickDayRemainingMinutes,
-                                    false,
-                                )}
+                                <LeaveDuration minutes={sickDayRemainingMinutes} />
                             </span>
                         </div>
                 </div>
