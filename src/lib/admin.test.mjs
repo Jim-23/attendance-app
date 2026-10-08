@@ -10,7 +10,7 @@ const modules = new Map()
 function loadModule(path) {
   if (modules.has(path)) return modules.get(path)
   const { outputText } = ts.transpileModule(readFileSync(path, 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
   })
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', outputText)(
@@ -26,6 +26,148 @@ const { getUserStatistics, getInvitationStatus, isAdminUser } = loadModule(resol
 const { calculateDailyBalances, getDailyLunchDeductions, hasLunchOnDate } = loadModule(resolve('src/lib/attendance.ts'))
 const { calculateShiftEnd, calculateMinutesUntil, calculateWorkedMinutes } = loadModule(resolve('src/lib/attendance.ts'))
 const { getMonthlyStatistics } = loadModule(resolve('src/lib/monthly.ts'))
+const { getAttendanceExportRows, EXPORT_HEADERS } = loadModule(resolve('src/lib/export.ts'))
+const { createAttendanceExcel, EXPORT_COLOURS } = loadModule(resolve('src/lib/excelExport.ts'))
+const ExcelJS = require('exceljs')
+
+test('Excel daily summaries include all dates and Czech columns, net work, lunch and daily balance', () => {
+  const now = new Date('2026-11-01T12:00:00Z')
+  const sessions = [{
+    started_at: '2026-10-01T04:00:00Z',
+    ended_at: '2026-10-01T12:30:00Z',
+    lunch_started_at: '2026-10-01T10:00:00Z',
+  }]
+  const rows = getAttendanceExportRows(sessions, [], '2026-10', now)
+  assert.equal(rows.length, 31)
+  assert.deepEqual(rows[0].slice(0, 8), ['Čt', '01.10.2026', '8:00', '8:00', '0:30', '0:00', '06:00', '14:30'])
+  assert.deepEqual(rows[2].slice(0, 8), ['So', '03.10.2026', '0:00', '0:00', '0:00', '0:00', '', ''])
+  assert.equal(rows[1][5], '-8:00')
+  assert.equal(rows[27][3], '8:00')
+  assert.match(rows[27][8], /Den vzniku/)
+  assert.equal(EXPORT_HEADERS.length, 10)
+  assert.equal(EXPORT_HEADERS[9], 'Stav')
+})
+
+test('Excel year includes every date including leap day and matches monthly totals', () => {
+  const now = new Date('2027-01-01T12:00:00Z')
+  const sessions = [
+    { started_at: '2026-10-01T06:07:00Z', ended_at: '2026-10-01T14:45:00Z', lunch_started_at: null },
+    { started_at: '2026-10-03T06:00:00Z', ended_at: '2026-10-03T08:00:00Z', lunch_started_at: null },
+  ]
+  const leave = [
+    { date: '2026-10-02', type: 'vacation', duration_minutes: 240 },
+    { date: '2026-10-05', type: 'sick_day', duration_minutes: 480 },
+    { date: '2026-10-28', type: 'holiday', duration_minutes: 480 },
+    { date: '2026-10-28', type: 'vacation', duration_minutes: 480 },
+  ]
+  const year = getAttendanceExportRows(sessions, leave, '2026', now)
+  assert.equal(year.length, 365)
+  assert.equal(year[0][1], '01.01.2026')
+  assert.equal(year.at(-1)[1], '31.12.2026')
+  assert.equal(new Set(year.map(row => row[1])).size, 365)
+  const leap = getAttendanceExportRows([], [], '2024', now)
+  assert.equal(leap.length, 366)
+  assert.equal(leap[59][1], '29.02.2024')
+  const month = getAttendanceExportRows(sessions, leave, '2026-10', now)
+  assert.deepEqual(year.filter(row => row[1].endsWith('.10.2026')), month)
+  const minutes = value => {
+    const [h, m] = value.split(':').map(Number)
+    return h * 60 + m
+  }
+  const statistics = getMonthlyStatistics(sessions, leave, '2026-10', now)
+  assert.equal(month.reduce((sum, row) => sum + minutes(row[2]), 0), statistics.fundMinutes)
+  assert.equal(month.reduce((sum, row) => sum + minutes(row[3]), 0), statistics.fulfilledMinutes)
+})
+
+test('Excel aggregates split and overnight sessions with one lunch, notes unclosed and future records', () => {
+  const now = new Date('2026-10-07T07:00:00Z')
+  const sessions = [
+    { started_at: '2026-10-01T04:00:00Z', ended_at: '2026-10-01T06:00:00Z', lunch_started_at: '2026-10-01T05:00:00Z' },
+    { started_at: '2026-10-01T07:00:00Z', ended_at: '2026-10-01T13:00:00Z', lunch_started_at: null },
+    { started_at: '2026-10-05T21:00:00Z', ended_at: '2026-10-06T01:00:00Z', lunch_started_at: null },
+    { started_at: '2026-10-07T04:00:00Z', ended_at: null, lunch_started_at: null, planned_departure_at: '2026-10-07T12:30:00Z' },
+  ]
+  const leave = [{ date: '2026-10-20', type: 'vacation', duration_minutes: 480 }]
+  const rows = getAttendanceExportRows(sessions, leave, '2026-10', now)
+  assert.equal(rows[0][3], '7:30')
+  assert.equal(rows[0][4], '0:30')
+  assert.equal(rows[0][7], '15:00')
+  assert.match(rows[0][8], /Pracovní záznamy: 2/)
+  assert.equal(rows[4][7], '06.10.2026 03:00')
+  assert.equal(rows[6][3], '0:00')
+  assert.equal(rows[6][6], '')
+  assert.match(rows[6][8], /Neukončená docházka od 06:00/)
+  assert.match(rows[6][8], /Plánovaný odchod 14:30/)
+  assert.equal(rows[19][3], '0:00')
+  assert.equal(rows[19][5], '')
+  assert.match(rows[19][8], /dosud nezapočteno/)
+  assert.equal(rows[27][3], '0:00')
+  assert.equal(rows[27][5], '')
+})
+
+test('Excel preserves Czech notes, semicolons, quotes and line breaks and rejects invalid periods', async () => {
+  const bytes = await createAttendanceExcel([], [{
+    date: '2026-10-01', type: 'vacation', duration_minutes: 240,
+    note: 'Lékař; "kontrola"\r\nDruhý řádek',
+  }], '2026-10', new Date('2026-11-01T12:00:00Z'))
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(bytes)
+  assert.equal(workbook.getWorksheet('říjen 2026').getCell('I2').value,
+    'Dovolená 4:00: Lékař; "kontrola"\nDruhý řádek')
+  assert.throws(() => getAttendanceExportRows([], [], '2026-13', new Date()), /Neplatný/)
+  assert.throws(() => getAttendanceExportRows([], [], '', new Date()), /Neplatný/)
+})
+
+test('Excel workbook persists highlighting, Czech statuses, filters, frozen headers and a legend', async () => {
+  const sessions = [
+    { started_at: '2026-10-01T06:00:00Z', ended_at: '2026-10-01T15:00:00Z', lunch_started_at: null },
+    { started_at: '2026-10-06T06:00:00Z', ended_at: null, lunch_started_at: null },
+    { started_at: '2026-10-07T06:00:00Z', ended_at: null, lunch_started_at: null },
+  ]
+  const leave = [
+    { date: '2026-10-05', type: 'vacation', duration_minutes: 240, note: '=SUM(A1:A5)' },
+    { date: '2026-10-08', type: 'sick_day', duration_minutes: 480 },
+  ]
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(await createAttendanceExcel(sessions, leave, '2026-10', new Date('2026-10-07T07:00:00Z')))
+  const sheet = workbook.getWorksheet('říjen 2026')
+  const colour = address => sheet.getCell(address).fill.fgColor.argb
+  assert.equal(sheet.rowCount, 32)
+  assert.equal(workbook.worksheets.length, 2)
+  assert.ok(workbook.getWorksheet('Legenda'))
+  assert.equal(sheet.views[0].state, 'frozen')
+  assert.equal(sheet.views[0].ySplit, 1)
+  assert.ok(sheet.autoFilter)
+  assert.equal(colour('F2'), `FF${EXPORT_COLOURS.extra}`)
+  assert.match(sheet.getCell('J2').value, /Nad denní plán/)
+  assert.equal(colour('F3'), `FF${EXPORT_COLOURS.missing}`)
+  assert.match(sheet.getCell('J3').value, /Chybí hodiny/)
+  assert.equal(colour('A4'), `FF${EXPORT_COLOURS.weekend}`)
+  assert.equal(colour('A6'), `FF${EXPORT_COLOURS.leave}`)
+  assert.equal(colour('F6'), `FF${EXPORT_COLOURS.missing}`)
+  assert.match(sheet.getCell('J6').value, /Dovolená.*Chybí hodiny/)
+  assert.equal(sheet.getCell('I6').type, ExcelJS.ValueType.String)
+  assert.match(sheet.getCell('I6').value, /=SUM\(A1:A5\)/)
+  assert.equal(colour('J7'), `FF${EXPORT_COLOURS.pending}`)
+  assert.match(sheet.getCell('J7').value, /Neukončená docházka.*Chybí hodiny/)
+  assert.equal(colour('J8'), `FF${EXPORT_COLOURS.pending}`)
+  assert.doesNotMatch(sheet.getCell('J8').value, /Chybí hodiny/)
+  assert.equal(sheet.getCell('F9').value, '')
+  assert.equal(sheet.getCell('A9').font.color.argb, 'FF64748B')
+  assert.match(sheet.getCell('J9').value, /Sick day.*Budoucí den/)
+  assert.equal(colour('A29'), `FF${EXPORT_COLOURS.holiday}`)
+  assert.match(sheet.getCell('J29').value, /Svátek.*Budoucí den/)
+})
+
+test('annual Excel has twelve Czech monthly sheets and all 366 leap-year dates', async () => {
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(await createAttendanceExcel([], [], '2024', new Date('2025-01-01T12:00:00Z')))
+  assert.equal(workbook.worksheets.length, 13)
+  assert.equal(workbook.getWorksheet('únor 2024').rowCount, 30)
+  assert.equal(workbook.getWorksheet('únor 2024').getCell('B30').value, '29.02.2024')
+  assert.equal(workbook.worksheets.filter(sheet => sheet.name !== 'Legenda')
+    .reduce((sum, sheet) => sum + sheet.rowCount - 1, 0), 366)
+})
 
 test('monthly Fond includes weekday holidays and credits them as paid hours', () => {
   const now = new Date('2026-10-07T07:00:00Z')

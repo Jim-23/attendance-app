@@ -14,6 +14,33 @@ export interface MonthlySession {
   planned_departure_at?: string | null
 }
 
+export function getMonthlyCalendarCredits(
+  leave: WorkDayForBalance[],
+  month: string,
+  dailyMinutes = 480,
+) {
+  const holidays = getCzechHolidays(Number(month.slice(0, 4)))
+  const addedHolidays = new Set(
+    leave.filter((day) => day.type === 'holiday').map((day) => day.date),
+  )
+  const days = getMonthDays(month).filter((day) => day.inMonth)
+  return days.map((day) => {
+    const isHoliday = !day.weekend && (holidays.has(day.date) || addedHolidays.has(day.date))
+    const leaveMinutes = day.weekend || isHoliday ? 0 : Math.min(
+      dailyMinutes,
+      leave.filter((record) => record.date === day.date && record.type !== 'holiday')
+        .reduce((total, record) => total + record.duration_minutes, 0),
+    )
+    return {
+      ...day,
+      requiredMinutes: day.weekend ? 0 : dailyMinutes,
+      holidayMinutes: isHoliday ? dailyMinutes : 0,
+      leaveMinutes,
+      holidayName: holidays.get(day.date) ?? (addedHolidays.has(day.date) ? 'Svátek' : null),
+    }
+  })
+}
+
 export function getMonthlyStatistics(
   sessions: MonthlySession[],
   leave: WorkDayForBalance[],
@@ -22,18 +49,9 @@ export function getMonthlyStatistics(
   dailyMinutes = 480,
 ) {
   const today = formatInTimeZone(now, APP_TIMEZONE, 'yyyy-MM-dd')
-  const holidays = getCzechHolidays(Number(month.slice(0, 4)))
-  const monthDays = getMonthDays(month).filter((day) => day.inMonth)
-  const addedHolidays = new Set(
-    leave.filter((day) => day.type === 'holiday').map((day) => day.date),
-  )
+  const monthDays = getMonthlyCalendarCredits(leave, month, dailyMinutes)
   const workingDays = monthDays.filter(
     (day) => !day.weekend,
-  )
-  const workingDates = new Set(workingDays.map((day) => day.date))
-  const holidayDates = new Set(
-    workingDays.filter((day) => holidays.has(day.date) || addedHolidays.has(day.date))
-      .map((day) => day.date),
   )
   const monthlySessions = sessions.filter((session) =>
     formatInTimeZone(new Date(session.started_at), APP_TIMEZONE, 'yyyy-MM-dd').startsWith(month),
@@ -61,25 +79,18 @@ export function getMonthlyStatistics(
     ), 0,
   )
 
-  const leaveByDate = new Map<string, number>()
-  for (const day of leave) {
-    if (day.type === 'holiday' || !workingDates.has(day.date) || holidayDates.has(day.date)) continue
-    leaveByDate.set(
-      day.date,
-      Math.min(dailyMinutes, (leaveByDate.get(day.date) ?? 0) + day.duration_minutes),
-    )
-  }
   let creditedLeaveMinutes = 0
   let plannedLeaveMinutes = 0
-  for (const [date, minutes] of leaveByDate) {
-    if (date <= today) creditedLeaveMinutes += minutes
-    else plannedLeaveMinutes += minutes
-  }
   let creditedHolidayMinutes = 0
   let plannedHolidayMinutes = 0
-  for (const date of holidayDates) {
-    if (date <= today) creditedHolidayMinutes += dailyMinutes
-    else plannedHolidayMinutes += dailyMinutes
+  for (const day of monthDays) {
+    if (day.date <= today) {
+      creditedLeaveMinutes += day.leaveMinutes
+      creditedHolidayMinutes += day.holidayMinutes
+    } else {
+      plannedLeaveMinutes += day.leaveMinutes
+      plannedHolidayMinutes += day.holidayMinutes
+    }
   }
   const fundMinutes = workingDays.length * dailyMinutes
   const fulfilledMinutes = workedMinutes + creditedLeaveMinutes + creditedHolidayMinutes
@@ -87,7 +98,7 @@ export function getMonthlyStatistics(
     creditedHolidayMinutes + plannedHolidayMinutes
   return {
     workingDays: workingDays.length,
-    holidayDays: holidayDates.size,
+    holidayDays: monthDays.filter((day) => day.holidayMinutes > 0).length,
     fundMinutes,
     workedMinutes,
     creditedLeaveMinutes,

@@ -12,6 +12,7 @@ import { getCzechHolidays } from '../lib/calendar'
 import { getMonthlyStatistics } from '../lib/monthly'
 import MonthlyStatisticsCards from './MonthlyStatisticsCards'
 import MonthInput from './MonthInput'
+import AttendanceExport from './AttendanceExport'
 
 import {
     formatTime,
@@ -81,7 +82,7 @@ interface DashboardProps {
 
 const PAGE_SIZE = 1000
 const dashboardViews = [
-    { id: 'dashboard', label: 'Dnešní přehled' },
+    { id: 'dashboard', label: 'Přehled' },
     { id: 'leave', label: 'Volno' },
     { id: 'history', label: 'Historie' },
     { id: 'statistics', label: 'Statistiky' },
@@ -112,6 +113,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
     const [menuOpen, setMenuOpen] = useState(false)
     const [now, setNow] = useState(() => new Date())
     const [workSession, setWorkSession] = useState<WorkSession | null>(null)
+    const [openSessionLoaded, setOpenSessionLoaded] = useState(false)
     const [loading, setLoading] = useState(true)
     const [actionLoading, setActionLoading] = useState(false)
     const [message, setMessageState] = useState<DashboardMessage | null>(null)
@@ -122,6 +124,8 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
         [],
     )
     const [history, setHistory] = useState<HistorySession[]>([])
+    const [historyLoaded, setHistoryLoaded] = useState(false)
+    const [workDaysLoaded, setWorkDaysLoaded] = useState(false)
     const [statisticsMonth, setStatisticsMonth] = useState(
         () => formatInTimeZone(new Date(), APP_TIMEZONE, 'yyyy-MM'),
     )
@@ -150,6 +154,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
 
 
     const loadWorkDays = useCallback(async () => {
+        setWorkDaysLoaded(false)
         const allWorkDays: WorkDay[] = []
         let offset = 0
 
@@ -182,10 +187,12 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
         }
 
         setWorkDays(allWorkDays)
+        setWorkDaysLoaded(true)
         setWorkDaysLoading(false)
     }, [setMessage, userId])
 
     const loadOpenSession = useCallback(async () => {
+        setOpenSessionLoaded(false)
         const { error: finishError } = await supabase.rpc('finish_my_planned_departure')
         if (finishError) {
             console.error('Failed to finish planned departure:', finishError)
@@ -210,11 +217,13 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
         }
 
         setWorkSession(data)
+        setOpenSessionLoaded(true)
         setLoading(false)
         return data
     }, [setMessage, userId])
 
     const loadHistory = useCallback(async () => {
+        setHistoryLoaded(false)
         const allSessions: HistorySession[] = []
         let offset = 0
 
@@ -310,6 +319,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
         setMonthlyOvertimeMinutes(
             calculateRunningOvertime(dailyBalances),
         )
+        setHistoryLoaded(true)
     }, [setMessage, userId])
 
     useEffect(() => {
@@ -1626,6 +1636,13 @@ return (
                         onChange={setStatisticsMonth}
                     />
                 </div>
+                <AttendanceExport
+                    sessions={workSession ? [...history, workSession] : history}
+                    leave={workDays}
+                    month={statisticsMonth}
+                    disabled={actionLoading || !historyLoaded || !workDaysLoaded || !openSessionLoaded}
+                    onError={setMessage}
+                />
                 <MonthlyStatisticsCards statistics={monthlyStatistics} />
                 <div className="stats-grid">
                     <div className="stat-card">

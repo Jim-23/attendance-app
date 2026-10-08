@@ -693,6 +693,13 @@ button:disabled {
     margin: 20px 0;
 }
 
+.attendance-export {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 16px 0;
+}
+
 .month-input {
     display: flex;
     flex-wrap: wrap;

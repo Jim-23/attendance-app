@@ -59,6 +59,35 @@ session durations show the calculated worked time.
 
 ## Monthly statistics
 
+User and admin Statistics offer **Export měsíce (Excel)** and **Export roku
+(Excel)** for the selected month/year as `.xlsx` files. Each file contains one daily summary for
+every calendar day (including weekends, empty days, and future dates), not
+session detail rows. Columns are **Den, Datum, Plán, Započteno, Přestávka,
+Bilance (+/−), Počátek, Konec, Poznámka, Stav**.
+
+Times/dates use Europe/Prague and durations use `H:mm`. Annual workbooks have
+one Czech-named sheet per month; every workbook includes a **Legenda** sheet.
+Headers are frozen and columns are filterable. Yellow marks holidays, blue
+marks leave, green marks hours above the daily plan, and red marks missing
+hours on past dates. Balance cells remain separately highlighted on leave
+or holiday rows so both conditions are visible. Orange marks unfinished
+attendance or today's ongoing shortfall; future dates use muted text and are
+not marked as missed hours. Czech **Stav** labels identify every condition
+without relying only on colours. Extra daily hours are not the cumulative
+overtime account. Notes are stored as text, never executed as Excel formulas.
+
+ExcelJS is loaded only when exporting. Its transitive `uuid` dependency is
+overridden to the patched 11.1.1+ CommonJS-compatible version; ExcelJS uses
+only the compatible `v4` API.
+Plan is the daily net requirement (including paid weekday holidays); credited
+hours match monthly fulfilment. Future leave/holidays and unclosed sessions
+remain uncredited and are noted; future daily balances are blank. The lunch
+column contains only the once-per-day deducted lunch, not gaps between sessions.
+Start/end show the earliest actual arrival and latest actual departure of
+completed sessions, before rounding; overnight departures include their date.
+Multiple sessions are aggregated into the same daily row and noted. Annual
+exports contain all 365 or 366 dates. Export is disabled until data is loaded.
+
 **Statistiky** has a month selector and shows:
 
 Month names are explicitly Czech (leden through prosinec), independent of the

@@ -13,6 +13,7 @@ import { getMonthlyStatistics } from '../lib/monthly'
 import type { MonthlySession } from '../lib/monthly'
 import MonthlyStatisticsCards from './MonthlyStatisticsCards'
 import MonthInput from './MonthInput'
+import AttendanceExport from './AttendanceExport'
 
 interface AdminDashboardProps {
   onBack: () => void
@@ -112,7 +113,7 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
       }
       for (let offset = 0; ; ) {
         const { data, error } = await supabase.from('work_days')
-          .select('date, type, duration_minutes').eq('user_id', selectedId)
+          .select('date, type, duration_minutes, note').eq('user_id', selectedId)
           .order('date').order('id').range(offset, offset + 999)
         if (!active) return
         if (error) {
@@ -252,6 +253,16 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
                     : 'Načítám statistiky...'}</p>
                 ) : (
                   <>
+                    {attendance && (
+                      <AttendanceExport
+                        sessions={attendance.allSessions}
+                        leave={attendance.days}
+                        month={month}
+                        dailyMinutes={selectedUser.daily_work_minutes}
+                        disabled={busy || attendanceFailedFor === selectedId}
+                        onError={setError}
+                      />
+                    )}
                     {monthlyStats && <MonthlyStatisticsCards statistics={monthlyStats} />}
                     <div className="stats-grid">
                       <div className="stat-card"><span className="stat-label">Přesčasový účet k dnešku</span>
