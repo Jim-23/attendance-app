@@ -9,6 +9,10 @@ Today's controls and metrics are grouped in one responsive panel. The main
 dashboard always includes the current calendar year's overtime account from completed
 attendance and leave through today, explicitly excluding the running session.
 Compensatory leave is deducted from this account; it is not the monthly Fond balance.
+The last successfully calculated overtime balance stays visible during background
+refreshes and attendance/leave updates. Loading text appears only until the first
+successful calculation. A failed refresh keeps the previous value with a warning;
+an initial failure is shown as unavailable, not as zero or endless loading.
 Vacation (20 days), sick days (5 days), and overtime start fresh every January 1
 in Europe/Prague, without carry-over. No history is deleted. Admin statistics
 show the overtime account for the selected year, through today at most.

@@ -131,13 +131,15 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
     )
     const [history, setHistory] = useState<HistorySession[]>([])
     const [historyLoaded, setHistoryLoaded] = useState(false)
+    const [historyErrorUserId, setHistoryErrorUserId] = useState<string | null>(null)
     const [workDaysLoaded, setWorkDaysLoaded] = useState(false)
     const [statisticsMonth, setStatisticsMonth] = useState(
         () => formatInTimeZone(new Date(), APP_TIMEZONE, 'yyyy-MM'),
     )
-    const [dailyBalances, setDailyBalances] = useState<
-        ReturnType<typeof calculateDailyBalances>
-    >([])
+    const [balanceSnapshot, setBalanceSnapshot] = useState<{
+        userId: string
+        balances: ReturnType<typeof calculateDailyBalances>
+    } | null>(null)
     const [dayType, setDayType] = useState<UserLeaveType>('vacation')
     const [doctorFrom, setDoctorFrom] = useState('08:30')
     const [doctorTo, setDoctorTo] = useState('09:23')
@@ -231,6 +233,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
 
     const loadHistory = useCallback(async () => {
         setHistoryLoaded(false)
+        setHistoryErrorUserId(null)
         const allSessions: HistorySession[] = []
         let offset = 0
 
@@ -246,6 +249,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
 
             if (error) {
                 console.error('Failed to load history:', error)
+                setHistoryErrorUserId(userId)
                 setMessage('Nepodařilo se načíst historii docházky.')
                 return
             }
@@ -289,6 +293,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
                 setMessage(
                     'Nepodařilo se načíst volno pro výpočet bilance.',
                 )
+                setHistoryErrorUserId(userId)
                 return
             }
 
@@ -319,7 +324,7 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
             sessionsToDate,
             allWorkDaysToDate,
         )
-        setDailyBalances(dailyBalances)
+        setBalanceSnapshot({ userId, balances: dailyBalances })
         setHistoryLoaded(true)
     }, [setMessage, userId])
 
@@ -1111,7 +1116,12 @@ const todayDate = formatInTimeZone(
     APP_TIMEZONE,
     'yyyy-MM-dd',
 )
+const hasBalanceSnapshot = balanceSnapshot?.userId === userId
+const dailyBalances = hasBalanceSnapshot ? balanceSnapshot.balances : []
 const monthlyOvertimeMinutes = calculateAnnualOvertime(dailyBalances, now)
+const overtimeDisplay = hasBalanceSnapshot
+    ? formatDuration(monthlyOvertimeMinutes)
+    : historyErrorUserId === userId ? 'Nelze načíst' : 'Načítám...'
 const monthlyStatistics = getMonthlyStatistics(
     workSession ? [...history, workSession] : history,
     workDays,
@@ -1620,13 +1630,18 @@ return (
                         <strong className={`stat-value ${
                             monthlyOvertimeMinutes > 0 ? 'positive' : monthlyOvertimeMinutes < 0 ? 'negative' : ''
                         }`}>
-                            {historyLoaded ? formatDuration(monthlyOvertimeMinutes) : 'Načítám...'}
+                            {overtimeDisplay}
                         </strong>
                         <span className="stat-description">
                             Průběžný zůstatek z uzavřené docházky a volna do dneška.
                             Náhradní volno a lékař mimo 08:30–14:00 se z účtu odečítají.
                             Každý rok začíná od nuly.
                         </span>
+                        {hasBalanceSnapshot && historyErrorUserId === userId && (
+                            <span className="stat-description negative" role="status">
+                                Aktualizace se nezdařila. Zobrazen poslední úspěšně načtený zůstatek.
+                            </span>
+                        )}
                     </div>
                 </div>
                 </div>
@@ -1700,8 +1715,13 @@ return (
                                       : ''
                             }`}
                         >
-                            {formatDuration(monthlyOvertimeMinutes)}
+                            {overtimeDisplay}
                         </strong>
+                        {hasBalanceSnapshot && historyErrorUserId === userId && (
+                            <span className="stat-description negative" role="status">
+                                Aktualizace se nezdařila. Zobrazen poslední úspěšně načtený zůstatek.
+                            </span>
+                        )}
                     </div>
                 </div>
             </section>
