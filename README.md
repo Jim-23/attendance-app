@@ -62,7 +62,7 @@ session durations show the calculated worked time.
 User and admin Statistics offer **Export měsíce (Excel)** and **Export roku
 (Excel)** for the selected month/year as `.xlsx` files. Each file contains one daily summary for
 every calendar day (including weekends, empty days, and future dates), not
-session detail rows. Columns are **Den, Datum, Plán, Započteno, Přestávka,
+session detail rows. Columns are **Den, Datum, Plán, Započteno, Oběd,
 Bilance (+/−), Počátek, Konec, Poznámka, Stav**.
 
 Times/dates use Europe/Prague and durations use `H:mm`. Annual workbooks have

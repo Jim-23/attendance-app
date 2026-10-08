@@ -8,7 +8,7 @@ import { APP_TIMEZONE } from './time'
 
 const WEEKDAYS = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So']
 export const EXPORT_HEADERS = [
-  'Den', 'Datum', 'Plán', 'Započteno', 'Přestávka', 'Bilance (+/−)', 'Počátek', 'Konec', 'Poznámka',
+  'Den', 'Datum', 'Plán', 'Započteno', 'Oběd', 'Bilance (+/−)', 'Počátek', 'Konec', 'Poznámka',
   'Stav',
 ]
 
