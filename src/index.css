@@ -612,9 +612,11 @@ button:disabled {
     background: var(--color-surface-secondary);
 }
 
+/*
 .today-summary .overtime-summary {
     border-left: 3px solid var(--color-primary);
 }
+*/
 
 .leave-duration {
     display: inline-flex;

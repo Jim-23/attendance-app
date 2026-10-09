@@ -1425,7 +1425,7 @@ return (
                             {openSessionStartDate && openSessionStartDate < todayDate && (
                                 <p className="message message-info message-block" role="status">
                                     Docházka z {formatDayLabel(openSessionStartDate)} nebyla ukončena.
-                                    Zadej odchod – den odchodu můžeš vybrat.
+                                    Zadej odchod.
                                 </p>
                             )}
 
@@ -1445,7 +1445,7 @@ return (
                                     </span>
                                     {workSession.planned_departure_at && (
                                         <span className="stat-description">
-                                            Automatický odchod: {formatTime(workSession.planned_departure_at)}
+                                            Automatický odchod v: {formatTime(workSession.planned_departure_at)}
                                         </span>
                                     )}
                                 </div>
@@ -1565,7 +1565,7 @@ return (
 
                             <h3>Dnes nemáš pracovní povinnost</h3>
 
-                            <p>Dnešní pracovní povinnost je splněna prací nebo volnem.</p>
+                            <p>Dnešní pracovní povinnost je splněna.</p>
                         </div>
                     ) : (
                         <div className="arrival-state">
@@ -1609,8 +1609,8 @@ return (
                         </strong>
                         <span className="stat-description">
                             {shiftEnd
-                                ? `Do splnění denní povinnosti (${formatTime(shiftEnd.toISOString())}), včetně oběda.`
-                                : 'Čistý pracovní čas, bez přestávky na oběd.'}
+                                ? `Do splnění denní povinnosti: (${formatTime(shiftEnd.toISOString())}), včetně oběda.`
+                                : 'Čistý pracovní čas.'}
                         </span>
                     </div>
                     {plannedDepartureRemainingMinutes !== null && workSession?.planned_departure_at && (
@@ -1621,7 +1621,6 @@ return (
                             </strong>
                             <span className="stat-description">
                                 Automatický odchod v {formatTime(workSession.planned_departure_at)}.
-                                Nezávisí na splnění denní povinnosti.
                             </span>
                         </div>
                     )}
@@ -1633,9 +1632,7 @@ return (
                             {overtimeDisplay}
                         </strong>
                         <span className="stat-description">
-                            Průběžný zůstatek z uzavřené docházky a volna do dneška.
-                            Náhradní volno a lékař mimo 08:30–14:00 se z účtu odečítají.
-                            Každý rok začíná od nuly.
+                            Průběžný zůstatek hodin navíc.
                         </span>
                         {hasBalanceSnapshot && historyErrorUserId === userId && (
                             <span className="stat-description negative" role="status">
