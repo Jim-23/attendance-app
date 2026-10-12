@@ -267,7 +267,8 @@ function AdminDashboard({ onBack, onRoleChange }: AdminDashboardProps) {
                     {monthlyStats && <MonthlyStatisticsCards statistics={monthlyStats} />}
                     <div className="stats-grid">
                       <div className="stat-card"><span className="stat-label">Přesčasový účet {month.slice(0, 4)} k dnešku</span>
-                        <strong className="stat-value">{formatDuration(stats.overtimeMinutes)}</strong></div>
+                        <strong className="stat-value">{formatDuration(stats.overtimeMinutes)}</strong>
+                        <span className="stat-description">Dnešní nesplněné hodiny se zúčtují až následující den.</span></div>
                       <div className="stat-card"><span className="stat-label">Dovolená v roce {month.slice(0, 4)} (včetně celozávodní)</span>
                         <strong className="stat-value"><LeaveDuration minutes={stats.vacationMinutes} /></strong></div>
                       <div className="stat-card"><span className="stat-label">Sick days v roce {month.slice(0, 4)}</span>

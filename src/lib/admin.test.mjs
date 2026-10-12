@@ -567,6 +567,54 @@ test('annual overtime resets at Prague midnight, keeps historical years and has 
   assert.equal(stats.overtimeMinutes, 0)
 })
 
+test('planned paid doctor time does not post an unfinished daily deficit to overtime', () => {
+  const records = [doctor('10:15', '13:00', '2026-10-12')]
+  const now = new Date('2026-10-12T04:50:00Z')
+  const previous = {
+    date: '2026-10-09', workedMinutes: 665, creditedMinutes: 0,
+    compTimeMinutes: 0, balanceMinutes: 185, overtimeChangeMinutes: 185,
+  }
+  const pending = calculateDailyBalances([], records)
+  assert.equal(pending[0].balanceMinutes, -315)
+  assert.equal(calculateAnnualOvertime([previous, ...pending], now), 185)
+
+  const morning = {
+    started_at: '2026-10-12T04:00:00Z', ended_at: '2026-10-12T08:15:00Z', lunch_started_at: null,
+  }
+  const betweenSessions = calculateDailyBalances([morning], records)
+  assert.equal(calculateAnnualOvertime([previous, ...betweenSessions],
+    new Date('2026-10-12T10:00:00Z')), 185)
+
+  const afternoon = {
+    started_at: '2026-10-12T11:00:00Z', ended_at: '2026-10-12T12:30:00Z',
+    lunch_started_at: '2026-10-12T11:00:00Z',
+  }
+  const finished = calculateDailyBalances([morning, afternoon], records)
+  assert.equal(finished[0].balanceMinutes, 0)
+  assert.equal(calculateAnnualOvertime([previous, ...finished],
+    new Date('2026-10-12T13:00:00Z')), 185)
+  const continuous = calculateDailyBalances([{
+    ...morning, ended_at: afternoon.ended_at, lunch_started_at: '2026-10-12T11:00:00Z',
+  }], records)
+  assert.equal(calculateAnnualOvertime([previous, ...continuous],
+    new Date('2026-10-12T13:00:00Z')), 185)
+  assert.equal(getUserStatistics([], records, '2026-10', 480, now).overtimeMinutes, 0)
+  assert.equal(getMonthlyStatistics([], records, '2026-10', now).creditedLeaveMinutes, 165)
+})
+
+test('today shortfalls post at Prague midnight while fulfilled overtime and compensatory debits post immediately', () => {
+  const day = {
+    date: '2026-10-12', workedMinutes: 420, creditedMinutes: 0,
+    compTimeMinutes: 0, balanceMinutes: -60, overtimeChangeMinutes: -60,
+  }
+  assert.equal(calculateAnnualOvertime([day], new Date('2026-10-12T21:59:59Z')), 0)
+  assert.equal(calculateAnnualOvertime([day], new Date('2026-10-12T22:00:00Z')), -60)
+  assert.equal(calculateAnnualOvertime([{ ...day, workedMinutes: 510,
+    balanceMinutes: 30, overtimeChangeMinutes: 30 }], new Date('2026-10-12T14:00:00Z')), 30)
+  assert.equal(calculateAnnualOvertime([{ ...day, compTimeMinutes: 60,
+    balanceMinutes: 0 }], new Date('2026-10-12T14:00:00Z')), -60)
+})
+
 test('invitation states include expiration, revocation and consumption', () => {
   const invitation = {
     id: 'fixture', email: null, created_at: '2026-10-01T00:00:00Z',

@@ -538,7 +538,9 @@ export function calculateAnnualOvertime(
 ): number {
   const today = formatInTimeZone(now, APP_TIMEZONE, 'yyyy-MM-dd')
   return calculateRunningOvertime(dailyBalances.filter(
-    (day) => day.date.slice(0, 4) === year && day.date <= today,
+    (day) => day.date.slice(0, 4) === year && day.date <= today &&
+      // Today's incomplete work may still be fulfilled by another session.
+      (day.date !== today || day.balanceMinutes >= 0),
   ))
 }
 

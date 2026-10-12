@@ -1633,6 +1633,7 @@ return (
                         </strong>
                         <span className="stat-description">
                             Průběžný zůstatek hodin navíc.
+                            Dnešní nesplněné hodiny se zúčtují až následující den.
                         </span>
                         {hasBalanceSnapshot && historyErrorUserId === userId && (
                             <span className="stat-description negative" role="status">
@@ -1714,6 +1715,9 @@ return (
                         >
                             {overtimeDisplay}
                         </strong>
+                        <span className="stat-description">
+                            Dnešní nesplněné hodiny se zúčtují až následující den.
+                        </span>
                         {hasBalanceSnapshot && historyErrorUserId === userId && (
                             <span className="stat-description negative" role="status">
                                 Aktualizace se nezdařila. Zobrazen poslední úspěšně načtený zůstatek.
