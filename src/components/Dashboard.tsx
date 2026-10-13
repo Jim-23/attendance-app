@@ -1238,6 +1238,7 @@ const shiftEnd = openSessionToday
           ),
           workDays,
           openSessionToday.lunch_started_at,
+          todayCompletedWorkedMinutes,
       )
     : null
 const shiftRemainingMinutes = shiftEnd ? calculateMinutesUntil(shiftEnd, now) : 0

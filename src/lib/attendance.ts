@@ -117,20 +117,40 @@ function getCountedAttendanceBounds(
 }
 
 function exceedsAutomaticLunchThreshold(
-  arrival: Date, departure: Date, workDays: WorkDayForBalance[],
+  arrival: Date,
+  departure: Date,
+  workDays: WorkDayForBalance[] = [],
+  priorWorkMinutes = 0,
 ): boolean {
   const { start, end } = getCountedAttendanceBounds(arrival, departure, workDays)
-  const totalMinutes =
-    (end.getTime() - start.getTime()) /
-    (1000 * 60)
+  const sessionMinutes = Math.max(0, (end.getTime() - start.getTime()) / 60_000)
+  const overlap = doctorOverlapMinutes(start, end, workDays, null)
+  const netWorkMinutes = Math.max(0, sessionMinutes - overlap)
 
-  return totalMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES
+  const date = formatInTimeZone(start, APP_TIMEZONE, 'yyyy-MM-dd')
+  const doctorMinutes = workDays
+    .filter((day) => day.type === 'doctor' && day.date === date)
+    .reduce((total, day) => {
+      if (day.doctor_from && day.doctor_to) {
+        return (
+          total +
+          splitDoctorVisit(
+            day.doctor_from.slice(0, 5),
+            day.doctor_to.slice(0, 5),
+          ).durationMinutes
+        )
+      }
+      return total + (day.duration_minutes ?? 0)
+    }, 0)
+
+  return (priorWorkMinutes + netWorkMinutes + doctorMinutes) > AUTOMATIC_LUNCH_AFTER_MINUTES
 }
 
 /**
  * Každý den (podle data příchodu v Praze) má nejvýše jeden oběd.
  * Zaznamenaný oběd má přednost. Pokud v daný den žádný není,
- * automatický oběd dostane první dokončená session delší než 5 hodin.
+ * automatický oběd (30 minut) se uplatní, pokud celkový součet odpracovaného
+ * času a návštěv lékaře za celý den přesáhne 6 hodin.
  */
 export function getDailyLunchDeductions<T extends LunchSession>(
   sessions: T[],
@@ -147,7 +167,7 @@ export function getDailyLunchDeductions<T extends LunchSession>(
     sessionsByDate.set(date, daySessions)
   }
 
-  for (const daySessions of sessionsByDate.values()) {
+  for (const [date, daySessions] of sessionsByDate.entries()) {
     const ordered = [...daySessions].sort(
       (left, right) =>
         new Date(left.started_at).getTime() -
@@ -163,18 +183,117 @@ export function getDailyLunchDeductions<T extends LunchSession>(
       continue
     }
 
-    const automatic = ordered.find(
-      (session) =>
-        session.ended_at !== null &&
-        exceedsAutomaticLunchThreshold(
-          new Date(session.started_at),
-          new Date(session.ended_at),
-          workDays,
-        ),
+    const dayDoctorRecords = workDays.filter(
+      (day) => day.type === 'doctor' && day.date === date,
     )
 
-    if (automatic) {
-      deductions.set(automatic, 'automatic')
+    const totalDoctorMinutes = dayDoctorRecords.reduce((total, day) => {
+      if (day.doctor_from && day.doctor_to) {
+        return (
+          total +
+          splitDoctorVisit(
+            day.doctor_from.slice(0, 5),
+            day.doctor_to.slice(0, 5),
+          ).durationMinutes
+        )
+      }
+      return total + (day.duration_minutes ?? 0)
+    }, 0)
+
+    const completedSessions = ordered.filter(
+      (session): session is T & { ended_at: string } =>
+        session.ended_at !== null,
+    )
+
+    const sessionData = completedSessions.map((session) => {
+      const { start, end } = getCountedAttendanceBounds(
+        new Date(session.started_at),
+        new Date(session.ended_at),
+        workDays,
+      )
+      const sessionMinutes = Math.max(
+        0,
+        (end.getTime() - start.getTime()) / 60_000,
+      )
+      const overlap = doctorOverlapMinutes(start, end, workDays, null)
+      const netWorkMinutes = Math.max(0, sessionMinutes - overlap)
+
+      return {
+        session,
+        start,
+        end,
+        sessionMinutes,
+        netWorkMinutes,
+      }
+    })
+
+    const totalWorkMinutes = sessionData.reduce(
+      (total, item) => total + item.netWorkMinutes,
+      0,
+    )
+
+    const totalDayMinutes = totalWorkMinutes + totalDoctorMinutes
+
+    if (
+      totalDayMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES &&
+      sessionData.length > 0
+    ) {
+      let chosenSession: T | null = null
+
+      for (const item of sessionData) {
+        const doctorBeforeEnd = dayDoctorRecords
+          .filter((day) => {
+            if (!day.doctor_to) return false
+            const docEnd = fromZonedTime(
+              `${day.date}T${day.doctor_to}`,
+              APP_TIMEZONE,
+            ).getTime()
+            return docEnd <= item.end.getTime()
+          })
+          .reduce((total, day) => {
+            if (day.doctor_from && day.doctor_to) {
+              return (
+                total +
+                splitDoctorVisit(
+                  day.doctor_from.slice(0, 5),
+                  day.doctor_to.slice(0, 5),
+                ).durationMinutes
+              )
+            }
+            return total + (day.duration_minutes ?? 0)
+          }, 0)
+
+        const cumulativeMinutes =
+          sessionData
+            .filter((prev) => prev.end.getTime() <= item.end.getTime())
+            .reduce((sum, prev) => sum + prev.netWorkMinutes, 0) +
+          doctorBeforeEnd
+
+        if (
+          cumulativeMinutes >= AUTOMATIC_LUNCH_AFTER_MINUTES &&
+          item.sessionMinutes >= LUNCH_MINUTES
+        ) {
+          chosenSession = item.session
+          break
+        }
+      }
+
+      if (!chosenSession) {
+        const candidate = sessionData.filter(
+          (item) => item.sessionMinutes >= LUNCH_MINUTES,
+        )
+        if (candidate.length > 0) {
+          chosenSession = candidate[0].session
+        } else {
+          chosenSession = sessionData.reduce((best, curr) =>
+            curr.sessionMinutes > best.sessionMinutes ? curr : best,
+          ).session
+        }
+      }
+
+      if (chosenSession) {
+        deductions.set(chosenSession, 'automatic')
+      }
     }
   }
 
@@ -205,17 +324,43 @@ export function getAutomaticLunchStart(
     return null
   }
 
-  const { start, end } = getCountedAttendanceBounds(arrival, departure, workDays)
-  const totalMinutes =
-    (end.getTime() - start.getTime()) /
-    (1000 * 60)
+  if (!exceedsAutomaticLunchThreshold(arrival, departure, workDays)) {
+    return null
+  }
 
-  return totalMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES
-    ? new Date(
-        start.getTime() +
-          AUTOMATIC_LUNCH_AFTER_MINUTES * 60 * 1000,
-      )
-    : null
+  const { start, end } = getCountedAttendanceBounds(arrival, departure, workDays)
+  const date = formatInTimeZone(start, APP_TIMEZONE, 'yyyy-MM-dd')
+  const doctorMinutesBefore = workDays
+    .filter((day) => day.type === 'doctor' && day.date === date && day.doctor_to)
+    .filter(
+      (day) =>
+        fromZonedTime(`${day.date}T${day.doctor_to}`, APP_TIMEZONE).getTime() <=
+        start.getTime(),
+    )
+    .reduce((total, day) => {
+      if (day.doctor_from && day.doctor_to) {
+        return (
+          total +
+          splitDoctorVisit(
+            day.doctor_from.slice(0, 5),
+            day.doctor_to.slice(0, 5),
+          ).durationMinutes
+        )
+      }
+      return total + (day.duration_minutes ?? 0)
+    }, 0)
+
+  const offsetMinutes = Math.max(
+    0,
+    AUTOMATIC_LUNCH_AFTER_MINUTES - doctorMinutesBefore,
+  )
+  const maxStart = Math.max(
+    start.getTime(),
+    end.getTime() - LUNCH_MINUTES * 60_000,
+  )
+  const targetTime = start.getTime() + offsetMinutes * 60_000
+
+  return new Date(Math.min(targetTime, maxStart))
 }
 
 /**
@@ -241,7 +386,7 @@ export function calculateWorkedMinutes(
   const lunchMinutes =
     hasLunch ||
     (allowAutomaticLunch &&
-      totalMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES)
+      exceedsAutomaticLunchThreshold(arrival, departure, workDays))
       ? LUNCH_MINUTES
       : 0
 
@@ -263,8 +408,8 @@ export function calculateSessionWorkedMinutes(
   return Math.max(0, calculateWorkedMinutes(
     new Date(session.started_at),
     new Date(session.ended_at),
-    deduction === 'recorded',
-    deduction === 'automatic',
+    deduction === 'recorded' || deduction === 'automatic',
+    false,
     workDays,
   ) - doctorOverlapMinutes(start, end, workDays, lunchStart))
 }
@@ -301,13 +446,32 @@ export function calculateShiftEnd(
   allowAutomaticLunch = true,
   workDays: WorkDayForBalance[] = [],
   lunchStartedAt: string | null = null,
+  priorWorkMinutes = 0,
 ): Date {
   if (requiredWorkedMinutes <= 0) return arrival
 
   const roundedWorkMinutes = Math.ceil(requiredWorkedMinutes / 15) * 15
+  const date = formatInTimeZone(arrival, APP_TIMEZONE, 'yyyy-MM-dd')
+  const doctorMinutes = workDays
+    .filter((day) => day.type === 'doctor' && day.date === date)
+    .reduce((total, day) => {
+      if (day.doctor_from && day.doctor_to) {
+        return (
+          total +
+          splitDoctorVisit(
+            day.doctor_from.slice(0, 5),
+            day.doctor_to.slice(0, 5),
+          ).durationMinutes
+        )
+      }
+      return total + (day.duration_minutes ?? 0)
+    }, 0)
+
   const lunchMinutes =
     hasLunch ||
-    (allowAutomaticLunch && roundedWorkMinutes > AUTOMATIC_LUNCH_AFTER_MINUTES)
+    (allowAutomaticLunch &&
+      (priorWorkMinutes + roundedWorkMinutes + doctorMinutes) >
+        AUTOMATIC_LUNCH_AFTER_MINUTES)
       ? LUNCH_MINUTES
       : 0
 
@@ -324,7 +488,7 @@ export function calculateShiftEnd(
         lunch_started_at: hasLunch ? lunchStartedAt : null,
       },
       hasLunch ? 'recorded' : allowAutomaticLunch &&
-        exceedsAutomaticLunchThreshold(arrival, end, workDays) ? 'automatic' : null,
+        exceedsAutomaticLunchThreshold(arrival, end, workDays, priorWorkMinutes) ? 'automatic' : null,
       workDays,
     ) < requiredWorkedMinutes) {
       end = new Date(end.getTime() + 15 * 60_000)

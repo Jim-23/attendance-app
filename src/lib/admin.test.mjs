@@ -327,8 +327,8 @@ test('shift countdown includes lunch and rounds to a departure that fulfils the 
   // A lunch deducted in an earlier session must not extend this session again.
   assert.equal(calculateShiftEnd(arrival, 480, false, false).toISOString(), '2026-10-07T14:00:00.000Z')
   assert.equal(calculateShiftEnd(arrival, 240, false).toISOString(), '2026-10-07T10:00:00.000Z')
-  assert.equal(calculateShiftEnd(arrival, 300, false).toISOString(), '2026-10-07T11:00:00.000Z')
-  assert.equal(calculateShiftEnd(arrival, 301, false).toISOString(), '2026-10-07T11:45:00.000Z')
+  assert.equal(calculateShiftEnd(arrival, 360, false).toISOString(), '2026-10-07T12:00:00.000Z')
+  assert.equal(calculateShiftEnd(arrival, 361, false).toISOString(), '2026-10-07T12:45:00.000Z')
   assert.equal(calculateShiftEnd(arrival, 240, true).toISOString(), '2026-10-07T10:30:00.000Z')
   assert.equal(calculateShiftEnd(arrival, 0, true).getTime(), arrival.getTime())
 
@@ -445,7 +445,7 @@ test('mixed doctor visit fulfils the day but consumes only outside-window overti
 test('doctor overlap respects rounded attendance, lunch, multiple sessions and overnight dates', () => {
   assert.equal(calculateSessionWorkedMinutes(fullShift, 'recorded', [doctor('12:00', '12:53')]), 457)
   assert.equal(calculateSessionWorkedMinutes({ ...fullShift, lunch_started_at: null },
-    'automatic', [doctor('11:00', '11:53')]), 457)
+    'automatic', [doctor('12:00', '12:53')]), 457)
   assert.equal(calculateSessionWorkedMinutes(fullShift, 'recorded', [doctor('15:00', '15:53')]), 480)
   const first = { ...fullShift, ended_at: '2026-10-01T06:00:00Z', lunch_started_at: null }
   const second = { ...fullShift, started_at: '2026-10-01T07:00:00Z' }
@@ -483,7 +483,7 @@ test('split attendance adjoining a doctor visit fulfils the day without an extra
   assert.equal(calculateCurrentWorkedMinutes(new Date(sessions[1].started_at),
     new Date('2026-10-06T08:00:00Z'), false, records), 71)
   assert.equal(calculateShiftEnd(new Date(sessions[1].started_at), 311,
-    false, true, records).toISOString(), new Date(sessions[1].ended_at).toISOString())
+    false, true, records, null, 135).toISOString(), new Date(sessions[1].ended_at).toISOString())
   const planned = sessions.map((session, index) => index === 1
     ? { ...session, ended_at: null, planned_departure_at: session.ended_at } : session)
   const projection = getMonthlyStatistics(planned, records, '2026-10', new Date('2026-10-06T08:00:00Z'))
@@ -529,22 +529,22 @@ test('doctor boundary matching does not fill real gaps or exempt a visit on anot
 test('automatic lunch threshold and placement use the same exact doctor boundary as work totals', () => {
   const records = [doctor('08:30', '09:23')]
   const session = {
-    started_at: '2026-10-01T07:23:00Z', ended_at: '2026-10-01T12:30:00Z', lunch_started_at: null,
+    started_at: '2026-10-01T07:23:00Z', ended_at: '2026-10-01T13:30:00Z', lunch_started_at: null,
   }
   assert.equal(getDailyLunchDeductions([session]).get(session), null)
   assert.equal(getDailyLunchDeductions([session], records).get(session), 'automatic')
   assert.equal(hasLunchOnDate([session], '2026-10-01', records), true)
-  assert.equal(calculateSessionWorkedMinutes(session, 'automatic', records), 277)
+  assert.equal(calculateSessionWorkedMinutes(session, 'automatic', records), 337)
   assert.equal(getAutomaticLunchStart(new Date(session.started_at), new Date(session.ended_at),
-    false, true, records).toISOString(), '2026-10-01T12:23:00.000Z')
+    false, true, records).toISOString(), '2026-10-01T12:30:00.000Z')
   const recorded = { ...session, lunch_started_at: '2026-10-01T10:00:00Z' }
   assert.equal(getDailyLunchDeductions([recorded], records).get(recorded), 'recorded')
-  assert.equal(calculateSessionWorkedMinutes(recorded, 'recorded', records), 277)
+  assert.equal(calculateSessionWorkedMinutes(recorded, 'recorded', records), 337)
   const stats = getMonthlyStatistics([session], records, '2026-10', octoberNow)
-  assert.equal(stats.workedMinutes, 277)
+  assert.equal(stats.workedMinutes, 337)
   const rows = getAttendanceExportRows([session], records, '2026-10', octoberNow)
   assert.equal(rows[0][4], '0:30')
-  assert.equal(rows[0][3], '5:30')
+  assert.equal(rows[0][3], '6:30')
 })
 
 test('annual overtime resets at Prague midnight, keeps historical years and has no carry-over', () => {
@@ -639,13 +639,13 @@ test('role response validation rejects unexpected or client-supplied roles', () 
 
 test('only one lunch is deducted per Prague day', () => {
   // Prague is UTC+2 on these dates.
-  const morning = { started_at: '2026-10-06T05:00:00Z', ended_at: '2026-10-06T11:00:00Z', lunch_started_at: null }
+  const morning = { started_at: '2026-10-06T05:00:00Z', ended_at: '2026-10-06T11:30:00Z', lunch_started_at: null }
   const afternoon = { started_at: '2026-10-06T12:00:00Z', ended_at: '2026-10-06T18:00:00Z', lunch_started_at: null }
   const automatic = getDailyLunchDeductions([afternoon, morning])
   assert.equal(automatic.get(morning), 'automatic')
   assert.equal(automatic.get(afternoon), null)
-  // 6 h + 6 h with a single 30-minute lunch.
-  assert.equal(calculateDailyBalances([morning, afternoon], [])[0].workedMinutes, 690)
+  // 6.5 h + 6 h with a single 30-minute lunch = 12 h (720 min).
+  assert.equal(calculateDailyBalances([morning, afternoon], [])[0].workedMinutes, 720)
 
   const recordedLater = { ...afternoon, lunch_started_at: '2026-10-06T13:00:00Z' }
   const withRecorded = getDailyLunchDeductions([morning, recordedLater])
@@ -663,6 +663,21 @@ test('only one lunch is deducted per Prague day', () => {
   assert.equal(hasLunchOnDate([open], '2026-10-06'), false)
   assert.equal(hasLunchOnDate([morning, open], '2026-10-06'), true)
   assert.equal(hasLunchOnDate([morning, open], '2026-10-07'), false)
+})
+
+test('automatic lunch applies when daily sum of work and doctor exceeds 6 hours across split sessions', () => {
+  // Arrived 05:50 (rounds to 06:00), doctor 10:14–12:19, worked till 14:30
+  const records = [doctor('10:14', '12:19', '2026-10-07')]
+  const sessions = [
+    { started_at: '2026-10-07T03:50:00Z', ended_at: '2026-10-07T08:14:00Z', lunch_started_at: null },
+    { started_at: '2026-10-07T10:19:00Z', ended_at: '2026-10-07T12:30:00Z', lunch_started_at: null },
+  ]
+  const [balance] = calculateDailyBalances(sessions, records)
+  assert.equal(balance.workedMinutes, 355) // (254 + 131) - 30 = 355
+  assert.equal(balance.creditedMinutes, 125) // doctor 10:14–12:19 = 2h 05m paid
+  assert.equal(balance.compTimeMinutes, 0)
+  assert.equal(balance.balanceMinutes, 0) // 355 + 125 = 480 fulfilled!
+  assert.equal(balance.overtimeChangeMinutes, 0) // exactly 0:00 balance, no +30m surplus!
 })
 
 const { validateSessionChange } = loadModule(resolve('src/lib/sessions.ts'))
