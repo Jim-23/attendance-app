@@ -3,7 +3,7 @@ import { doctorOverlapMinutes, isDoctorBoundary, splitDoctorVisit } from './doct
 
 const APP_TIMEZONE = 'Europe/Prague'
 const LUNCH_MINUTES = 30
-const AUTOMATIC_LUNCH_AFTER_MINUTES = 5 * 60
+const AUTOMATIC_LUNCH_AFTER_MINUTES = 6 * 60
 
 export interface WorkSessionForBalance {
   started_at: string
