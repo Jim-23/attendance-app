@@ -404,7 +404,8 @@ export function calculateSessionWorkedMinutes(
   const { start, end } = getCountedAttendanceBounds(arrival, departure, workDays)
   const lunchStart = deduction === 'recorded' && session.lunch_started_at
     ? new Date(session.lunch_started_at)
-    : getAutomaticLunchStart(arrival, departure, false, deduction === 'automatic', workDays)
+    : null
+  // Only a recorded lunch proves an overlap; automatic lunch must not credit doctor time twice.
   return Math.max(0, calculateWorkedMinutes(
     new Date(session.started_at),
     new Date(session.ended_at),

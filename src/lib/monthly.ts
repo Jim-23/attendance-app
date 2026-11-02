@@ -14,6 +14,12 @@ export interface MonthlySession {
   planned_departure_at?: string | null
 }
 
+export function getMonthlySessions<T extends MonthlySession>(sessions: T[], month: string): T[] {
+  return sessions.filter((session) =>
+    formatInTimeZone(new Date(session.started_at), APP_TIMEZONE, 'yyyy-MM') === month,
+  )
+}
+
 export function getMonthlyCalendarCredits(
   leave: WorkDayForBalance[],
   month: string,
@@ -53,9 +59,7 @@ export function getMonthlyStatistics(
   const workingDays = monthDays.filter(
     (day) => !day.weekend,
   )
-  const monthlySessions = sessions.filter((session) =>
-    formatInTimeZone(new Date(session.started_at), APP_TIMEZONE, 'yyyy-MM-dd').startsWith(month),
-  )
+  const monthlySessions = getMonthlySessions(sessions, month)
   const completed: WorkSessionForBalance[] = []
   const planned: WorkSessionForBalance[] = []
   for (const session of monthlySessions) {

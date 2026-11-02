@@ -1,5 +1,5 @@
 import { formatInTimeZone } from 'date-fns-tz'
-import { calculateSessionWorkedMinutes, getDailyLunchDeductions } from './attendance'
+import { calculateDailyBalances, calculateSessionWorkedMinutes, getDailyLunchDeductions } from './attendance'
 import type { WorkDayForBalance, WorkSessionForBalance } from './attendance'
 import { getMonthlyCalendarCredits } from './monthly'
 import type { MonthlySession } from './monthly'
@@ -17,7 +17,7 @@ export interface ExportLeave extends WorkDayForBalance {
   note?: string | null
 }
 
-function duration(minutes: number, signed = false): string {
+export function duration(minutes: number, signed = false): string {
   const absolute = Math.abs(minutes)
   const prefix = minutes < 0 ? '-' : signed && minutes > 0 ? '+' : ''
   return `${prefix}${Math.floor(absolute / 60)}:${String(absolute % 60).padStart(2, '0')}`
@@ -34,13 +34,13 @@ function time(timestamp: string, date: string): string {
   )
 }
 
-export function getAttendanceExportRows(
+export function getAttendanceExportDays(
   sessions: MonthlySession[],
   leave: ExportLeave[],
   period: string,
   now: Date,
   dailyMinutes = 480,
-): string[][] {
+) {
   if (!/^\d{4}(-(0[1-9]|1[0-2]))?$/.test(period) || Number(period.slice(0, 4)) < 100) {
     throw new Error('Neplatný měsíc nebo rok exportu.')
   }
@@ -53,6 +53,9 @@ export function getAttendanceExportRows(
       session.ended_at !== null && new Date(session.ended_at) <= now,
     )
   const deductions = getDailyLunchDeductions(completed, leave)
+  const accountBalances = new Map(calculateDailyBalances(
+    completed, leave.filter((day) => day.date <= today), dailyMinutes,
+  ).map((day) => [day.date, day]))
 
   return months.flatMap((month) => getMonthlyCalendarCredits(leave, month, dailyMinutes).map((day) => {
     const daySessions = completed.filter((session) => localDate(session.started_at) === day.date)
@@ -62,6 +65,22 @@ export function getAttendanceExportRows(
     )
     const credited = worked + (day.date <= today ? day.leaveMinutes + day.holidayMinutes : 0)
     const lunch = daySessions.some((session) => deductions.get(session) != null) ? 30 : 0
+    const leaveMinutes: Record<ExportLeave['type'], number> = {
+      holiday: day.date <= today ? day.holidayMinutes : 0,
+      doctor: 0, vacation: 0, sick_day: 0, comp_time: 0, mandatory_vacation: 0,
+    }
+    let remainingLeave = day.date <= today ? day.leaveMinutes : 0
+    for (const record of leave.filter((record) => record.date === day.date && record.type !== 'holiday')) {
+      const minutes = Math.min(remainingLeave, record.duration_minutes)
+      leaveMinutes[record.type] += minutes
+      remainingLeave -= minutes
+    }
+    const balance = day.date <= today ? credited - day.requiredMinutes : null
+    const accountBalance = accountBalances.get(day.date)
+    const overtimeChange = day.date <= today && accountBalance &&
+      (day.date < today || accountBalance.balanceMinutes >= 0)
+      ? accountBalance.overtimeChangeMinutes
+      : null
     const notes: string[] = []
     const statuses: string[] = []
     if (day.weekend) statuses.push('Víkend')
@@ -100,7 +119,7 @@ export function getAttendanceExportRows(
       (latest, session) => !latest || new Date(session.ended_at) > new Date(latest)
         ? session.ended_at : latest, null,
     )
-    return [
+    const values = [
       WEEKDAYS[new Date(`${day.date}T00:00:00Z`).getUTCDay()],
       day.date.split('-').reverse().join('.'),
       duration(day.requiredMinutes),
@@ -112,5 +131,20 @@ export function getAttendanceExportRows(
       notes.join(' · '),
       statuses.join(' · '),
     ]
+    return {
+      date: day.date, values, workedMinutes: worked, creditedMinutes: credited,
+      requiredMinutes: day.requiredMinutes, lunchMinutes: lunch,
+      balanceMinutes: balance, overtimeChangeMinutes: overtimeChange, leaveMinutes,
+    }
   }))
+}
+
+export function getAttendanceExportRows(
+  sessions: MonthlySession[],
+  leave: ExportLeave[],
+  period: string,
+  now: Date,
+  dailyMinutes = 480,
+): string[][] {
+  return getAttendanceExportDays(sessions, leave, period, now, dailyMinutes).map((day) => day.values)
 }

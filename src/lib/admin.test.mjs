@@ -34,7 +34,7 @@ const { getUserStatistics, getInvitationStatus, isAdminUser } = loadModule(resol
 const { calculateDailyBalances, getDailyLunchDeductions, hasLunchOnDate } = loadModule(resolve('src/lib/attendance.ts'))
 const { calculateShiftEnd, calculateMinutesUntil, calculateWorkedMinutes, getAutomaticLunchStart } =
   loadModule(resolve('src/lib/attendance.ts'))
-const { getMonthlyStatistics } = loadModule(resolve('src/lib/monthly.ts'))
+const { getMonthlySessions, getMonthlyStatistics } = loadModule(resolve('src/lib/monthly.ts'))
 const { getAttendanceExportRows, EXPORT_HEADERS } = loadModule(resolve('src/lib/export.ts'))
 const { createAttendanceExcel, EXPORT_COLOURS } = loadModule(resolve('src/lib/excelExport.ts'))
 const ExcelJS = require('exceljs')
@@ -141,7 +141,8 @@ test('Excel workbook persists highlighting, Czech statuses, filters, frozen head
   await workbook.xlsx.load(await createAttendanceExcel(sessions, leave, '2026-10', new Date('2026-10-07T07:00:00Z')))
   const sheet = workbook.getWorksheet('říjen 2026')
   const colour = address => sheet.getCell(address).fill.fgColor.argb
-  assert.equal(sheet.rowCount, 32)
+  assert.equal(sheet.getCell('A33').value, 'CELKEM')
+  assert.equal(sheet.autoFilter, 'A1:J32')
   assert.equal(workbook.worksheets.length, 2)
   assert.ok(workbook.getWorksheet('Legenda'))
   assert.equal(sheet.views[0].state, 'frozen')
@@ -172,10 +173,11 @@ test('annual Excel has twelve Czech monthly sheets and all 366 leap-year dates',
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(await createAttendanceExcel([], [], '2024', new Date('2025-01-01T12:00:00Z')))
   assert.equal(workbook.worksheets.length, 13)
-  assert.equal(workbook.getWorksheet('únor 2024').rowCount, 30)
+  assert.equal(workbook.getWorksheet('únor 2024').getCell('A31').value, 'CELKEM')
   assert.equal(workbook.getWorksheet('únor 2024').getCell('B30').value, '29.02.2024')
   assert.equal(workbook.worksheets.filter(sheet => sheet.name !== 'Legenda')
-    .reduce((sum, sheet) => sum + sheet.rowCount - 1, 0), 366)
+    .reduce((sum, sheet) => sum + sheet.getColumn(2).values
+      .filter(value => typeof value === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(value)).length, 0), 366)
 })
 
 test('monthly Fond includes weekday holidays and credits them as paid hours', () => {
@@ -421,7 +423,7 @@ test('paid doctor time replaces overlapping work without rounding or doubling mo
   const workbook = await createAttendanceExcel([fullShift], records, '2026-10', octoberNow)
   const copy = new ExcelJS.Workbook()
   await copy.xlsx.load(workbook)
-  assert.equal(copy.worksheets[0].getCell('A2').fill.fgColor.argb, `FF${EXPORT_COLOURS.leave}`)
+  assert.equal(copy.worksheets[0].getCell('A2').fill.fgColor.argb, `FF${EXPORT_COLOURS.doctor}`)
 })
 
 test('mixed doctor visit fulfils the day but consumes only outside-window overtime', () => {
@@ -445,7 +447,7 @@ test('mixed doctor visit fulfils the day but consumes only outside-window overti
 test('doctor overlap respects rounded attendance, lunch, multiple sessions and overnight dates', () => {
   assert.equal(calculateSessionWorkedMinutes(fullShift, 'recorded', [doctor('12:00', '12:53')]), 457)
   assert.equal(calculateSessionWorkedMinutes({ ...fullShift, lunch_started_at: null },
-    'automatic', [doctor('12:00', '12:53')]), 457)
+    'automatic', [doctor('12:00', '12:53')]), 427)
   assert.equal(calculateSessionWorkedMinutes(fullShift, 'recorded', [doctor('15:00', '15:53')]), 480)
   const first = { ...fullShift, ended_at: '2026-10-01T06:00:00Z', lunch_started_at: null }
   const second = { ...fullShift, started_at: '2026-10-01T07:00:00Z' }
@@ -678,6 +680,119 @@ test('automatic lunch applies when daily sum of work and doctor exceeds 6 hours 
   assert.equal(balance.compTimeMinutes, 0)
   assert.equal(balance.balanceMinutes, 0) // 355 + 125 = 480 fulfilled!
   assert.equal(balance.overtimeChangeMinutes, 0) // exactly 0:00 balance, no +30m surplus!
+})
+
+test('history month selection uses Prague arrival month, retains ordering and leaves source data intact', () => {
+  const sessions = [
+    { ...fullShift, id: 3, started_at: '2026-10-31T23:15:00Z' },
+    { ...fullShift, id: 2, started_at: '2026-10-12T03:50:00Z' },
+    { ...fullShift, id: 1, started_at: '2026-09-30T22:15:00Z' },
+    { ...fullShift, id: 0, started_at: '2025-10-01T04:00:00Z' },
+  ]
+  assert.deepEqual(getMonthlySessions(sessions, '2026-10').map(session => session.id), [2, 1])
+  assert.deepEqual(getMonthlySessions(sessions, '2026-11').map(session => session.id), [3])
+  assert.deepEqual(getMonthlySessions(sessions, '2025-10').map(session => session.id), [0])
+  assert.deepEqual(getMonthlySessions(sessions, '2026-08'), [])
+  assert.equal(sessions.length, 4)
+})
+
+test('screenshot doctor visit yields zero overtime in history, monthly statistics and saved Excel', async () => {
+  const records = [doctor('10:14', '12:19', '2026-10-12')]
+  const continuous = [{
+    started_at: '2026-10-12T03:50:00Z', ended_at: '2026-10-12T12:30:00Z', lunch_started_at: null,
+  }]
+  const split = [
+    { ...continuous[0], ended_at: '2026-10-12T08:14:00Z' },
+    { ...continuous[0], started_at: '2026-10-12T10:19:00Z' },
+  ]
+  for (const sessions of [continuous, split]) {
+    const [balance] = calculateDailyBalances(sessions, records)
+    assert.equal(balance.workedMinutes, 355)
+    assert.equal(balance.overtimeChangeMinutes, 0)
+    assert.equal(getMonthlyStatistics(sessions, records, '2026-10', octoberNow).workedMinutes, 355)
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(await createAttendanceExcel(sessions, records, '2026-10', octoberNow))
+    const sheet = workbook.worksheets[0]
+    assert.equal(sheet.getCell('D13').value, '8:00')
+    assert.equal(sheet.getCell('F13').value, '0:00')
+    assert.equal(sheet.getCell('A13').fill.fgColor.argb, `FF${EXPORT_COLOURS.doctor}`)
+    assert.equal(sheet.getCell('J13').fill.fgColor.argb, `FF${EXPORT_COLOURS.doctor}`)
+  }
+})
+
+test('doctor status stays green for deficits, surpluses and future visits', async () => {
+  const sessions = [{
+    started_at: '2026-10-02T04:00:00Z', ended_at: '2026-10-02T13:30:00Z', lunch_started_at: null,
+  }]
+  const records = [
+    doctor('08:30', '09:23'),
+    doctor('08:30', '09:23', '2026-10-02'),
+    doctor('08:30', '09:23', '2026-10-08'),
+  ]
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(await createAttendanceExcel(
+    sessions, records, '2026-10', new Date('2026-10-07T08:00:00Z'),
+  ))
+  const sheet = workbook.worksheets[0]
+  for (const row of [2, 3, 9]) {
+    for (const column of ['A', 'I', 'J']) {
+      assert.equal(sheet.getCell(`${column}${row}`).fill.fgColor.argb, `FF${EXPORT_COLOURS.doctor}`)
+    }
+  }
+  assert.equal(sheet.getCell('F2').fill.fgColor.argb, `FF${EXPORT_COLOURS.missing}`)
+  assert.equal(sheet.getCell('F3').fill.fgColor.argb, `FF${EXPORT_COLOURS.extra}`)
+  assert.equal(sheet.getCell('F9').value, '')
+})
+
+test('Excel totals and leave breakdown exclude future plans, weekends and holiday duplicates', async () => {
+  const sessions = [
+    fullShift,
+    { ...fullShift, started_at: '2026-10-02T04:00:00Z', ended_at: '2026-10-02T13:30:00Z', lunch_started_at: null },
+    { ...fullShift, started_at: '2026-10-06T04:00:00Z', ended_at: '2026-10-06T08:00:00Z', lunch_started_at: null },
+    { ...fullShift, started_at: '2026-10-07T04:00:00Z', ended_at: null },
+  ]
+  const leave = [
+    doctor('08:00', '09:23'),
+    { date: '2026-10-03', type: 'vacation', duration_minutes: 480 },
+    { date: '2026-10-05', type: 'vacation', duration_minutes: 240 },
+    { date: '2026-10-05', type: 'sick_day', duration_minutes: 240 },
+    { date: '2026-10-06', type: 'comp_time', duration_minutes: 240 },
+    { date: '2026-10-08', type: 'mandatory_vacation', duration_minutes: 480 },
+    { date: '2026-10-28', type: 'vacation', duration_minutes: 480 },
+  ]
+  const loadSheet = async (now) => {
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(await createAttendanceExcel(sessions, leave, '2026-10', now))
+    return workbook.worksheets[0]
+  }
+  const sheet = await loadSheet(octoberNow)
+  const totals = new Map()
+  sheet.eachRow(row => totals.set(row.getCell(1).value, row.getCell(2).value))
+  assert.equal(totals.get('Odpracováno (bez volna a oběda)'), '19:37')
+  assert.equal(totals.get('Lékař'), '1:23')
+  assert.equal(totals.get('Dovolená'), '4:00')
+  assert.equal(totals.get('Sick day'), '4:00')
+  assert.equal(totals.get('Náhradní volno'), '4:00')
+  assert.equal(totals.get('Celozávodní dovolená'), '8:00')
+  assert.equal(totals.get('Svátek'), '8:00')
+  assert.equal(totals.get('Nad denní plán'), '1:00')
+  assert.equal(totals.get('Chybějící hodiny'), '128:00')
+  assert.equal(totals.get('Změna přesčasového účtu'), '-3:30')
+  const accountChanges = calculateDailyBalances(sessions.filter(session => session.ended_at), leave)
+  assert.equal(accountChanges.reduce((sum, day) => sum + day.overtimeChangeMinutes, 0), -210)
+  assert.equal(sheet.getCell('C33').value, '176:00')
+  assert.equal(sheet.getCell('D33').value, '49:00')
+  assert.equal(sheet.getCell('E33').value, '1:00')
+  assert.equal(sheet.getCell('F33').value, '-127:00')
+  const current = await loadSheet(new Date('2026-10-07T08:00:00Z'))
+  const currentTotals = new Map()
+  current.eachRow(row => currentTotals.set(row.getCell(1).value, row.getCell(2).value))
+  assert.equal(currentTotals.get('Celozávodní dovolená'), '0:00')
+  assert.equal(currentTotals.get('Svátek'), '0:00')
+  assert.equal(currentTotals.get('Změna přesčasového účtu'), '-3:30')
+  for (const address of ['A2', 'J2']) {
+    assert.equal(current.getCell(address).fill.fgColor.argb, `FF${EXPORT_COLOURS.doctor}`)
+  }
 })
 
 const { validateSessionChange } = loadModule(resolve('src/lib/sessions.ts'))

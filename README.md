@@ -5,6 +5,15 @@ sessions, manage leave, review their attendance in a calendar, and view work
 statistics. Admins can manage users and registration invitations. Monthly and
 yearly statistics can be exported to Excel.
 
+History always shows one selected month (initially the current Prague month);
+the month/year selector also allows browsing older records. This does not change
+the data used by annual statistics or exports.
+
+Each monthly Excel sheet ends with a totals row and a breakdown of net work,
+daily surpluses and deficits, posted overtime-account changes, and each type of
+credited leave and holiday. Future leave is excluded from credited totals.
+Doctor entries are green; the daily balance cell retains its own balance colour.
+
 ## Built with
 
 - React and TypeScript
@@ -52,6 +61,9 @@ A paid doctor visit from 10:15 to 13:00 does not reduce overtime merely because
 the work session is still open. Its 165 minutes remain visible in daily/monthly
 fulfilment and exports, separately from the posted overtime account. Doctor time
 outside 08:30–14:00 still consumes overtime when the day's change is posted.
+An automatic lunch is deducted separately from doctor time: its estimated time
+does not establish an actual overlap with a visit. Only a recorded lunch can
+establish such an overlap.
 
 ## Checks
 

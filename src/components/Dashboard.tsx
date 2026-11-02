@@ -9,7 +9,7 @@ import { validateSessionChange } from '../lib/sessions'
 import type { SessionChange } from '../lib/sessions'
 import CalendarDayPanel from './CalendarDayPanel'
 import { getCzechHolidays } from '../lib/calendar'
-import { getMonthlyStatistics } from '../lib/monthly'
+import { getMonthlySessions, getMonthlyStatistics } from '../lib/monthly'
 import MonthlyStatisticsCards from './MonthlyStatisticsCards'
 import MonthInput from './MonthInput'
 import AttendanceExport from './AttendanceExport'
@@ -130,6 +130,9 @@ function Dashboard({ userId, email, onLogout, onOpenAdmin }: DashboardProps) {
         [],
     )
     const [history, setHistory] = useState<HistorySession[]>([])
+    const [historyMonth, setHistoryMonth] = useState(
+        () => formatInTimeZone(new Date(), APP_TIMEZONE, 'yyyy-MM'),
+    )
     const [historyLoaded, setHistoryLoaded] = useState(false)
     const [historyErrorUserId, setHistoryErrorUserId] = useState<string | null>(null)
     const [workDaysLoaded, setWorkDaysLoaded] = useState(false)
@@ -1150,6 +1153,7 @@ const todayCompTimeMinutes = todayWorkDays
     )
 
 const historyLunchDeductions = getDailyLunchDeductions(history, workDays)
+const monthlyHistory = getMonthlySessions(history, historyMonth)
 
 const todayCompletedSessions = history.filter(
     (session) =>
@@ -1738,11 +1742,12 @@ return (
                     <div>
                         <p className="section-eyebrow">PŘEHLED ZÁZNAMŮ</p>
                     </div>
+                    <MonthInput id="history-month" value={historyMonth} onChange={setHistoryMonth} />
                 </div>
 
-                {history.length === 0 ? (
+                {monthlyHistory.length === 0 ? (
                     <div className="empty-state card">
-                        <p>Zatím žádná historie.</p>
+                        <p>V tomto měsíci není žádná historie.</p>
                     </div>
                 ) : (
                     <div className="table-wrapper">
@@ -1760,7 +1765,7 @@ return (
                             </thead>
 
                             <tbody>
-                                {history.map((session) => {
+                                {monthlyHistory.map((session) => {
                                     const lunchDeduction =
                                         historyLunchDeductions.get(session) ?? null
                                     const workedMinutes =
